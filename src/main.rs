@@ -587,47 +587,58 @@ async fn show_traceability(
     let db = db::init_db(db_path).await?;
 
     if all {
-        let features = db::all_feature_traceability(&db).await?;
-        let stories = db::all_user_story_traceability(&db).await?;
+        let all_bl = db::all_business_logic(&db).await?;
+        
+        let mut feature_map: std::collections::HashMap<String, Vec<_>> = std::collections::HashMap::new();
+        let mut story_map: std::collections::HashMap<String, Vec<_>> = std::collections::HashMap::new();
+        
+        for bl in &all_bl {
+            if let Some(ref fid) = bl.feature_id {
+                feature_map.entry(fid.clone()).or_default().push(bl);
+            }
+            if let Some(ref sid) = bl.user_story_id {
+                story_map.entry(sid.clone()).or_default().push(bl);
+            }
+        }
 
         println!("Feature-to-Code Traceability:");
-        if features.is_empty() {
+        if feature_map.is_empty() {
             println!("  No features with linked code elements");
         } else {
-            for entry in features {
-                println!("\n  Feature: {}", entry.feature_id);
-                println!("    Code elements ({}):", entry.count);
-                for elem in entry.code_elements.iter().take(5) {
+            for (fid, elements) in &feature_map {
+                println!("\n  Feature: {}", fid);
+                println!("    Code elements ({}):", elements.len());
+                for elem in elements.iter().take(5) {
                     println!("      - {}: {}", elem.element_qualified, elem.description);
                 }
-                if entry.code_elements.len() > 5 {
-                    println!("      ... and {} more", entry.code_elements.len() - 5);
+                if elements.len() > 5 {
+                    println!("      ... and {} more", elements.len() - 5);
                 }
             }
         }
 
         println!("\nUser Story-to-Code Traceability:");
-        if stories.is_empty() {
+        if story_map.is_empty() {
             println!("  No user stories with linked code elements");
         } else {
-            for entry in stories {
-                println!("\n  User Story: {}", entry.user_story_id);
-                println!("    Code elements ({}):", entry.count);
-                for elem in entry.code_elements.iter().take(5) {
+            for (sid, elements) in &story_map {
+                println!("\n  User Story: {}", sid);
+                println!("    Code elements ({}):", elements.len());
+                for elem in elements.iter().take(5) {
                     println!("      - {}: {}", elem.element_qualified, elem.description);
                 }
-                if entry.code_elements.len() > 5 {
-                    println!("      ... and {} more", entry.code_elements.len() - 5);
+                if elements.len() > 5 {
+                    println!("      ... and {} more", elements.len() - 5);
                 }
             }
         }
     } else if let Some(fid) = feature {
-        let trace = db::get_feature_traceability(&db, fid).await?;
+        let elements = db::get_by_feature(&db, fid).await?;
         println!("Feature-to-Code Traceability for '{}':", fid);
-        if trace.code_elements.is_empty() {
+        if elements.is_empty() {
             println!("  No code elements linked to this feature");
         } else {
-            for elem in trace.code_elements {
+            for elem in elements {
                 println!("\n  Element: {}", elem.element_qualified);
                 println!("    Description: {}", elem.description);
                 if let Some(story) = elem.user_story_id {
@@ -636,12 +647,12 @@ async fn show_traceability(
             }
         }
     } else if let Some(sid) = user_story {
-        let trace = db::get_user_story_traceability(&db, sid).await?;
+        let elements = db::get_by_user_story(&db, sid).await?;
         println!("User Story-to-Code Traceability for '{}':", sid);
-        if trace.code_elements.is_empty() {
+        if elements.is_empty() {
             println!("  No code elements linked to this user story");
         } else {
-            for elem in trace.code_elements {
+            for elem in elements {
                 println!("\n  Element: {}", elem.element_qualified);
                 println!("    Description: {}", elem.description);
                 if let Some(feat) = elem.feature_id {
@@ -662,7 +673,7 @@ async fn find_by_domain(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = db::init_db(db_path).await?;
 
-    let results = db::find_by_business_domain(&db, domain).await?;
+    let results = db::search_business_logic(&db, domain).await?;
 
     if results.is_empty() {
         println!("No code elements found matching domain '{}'", domain);

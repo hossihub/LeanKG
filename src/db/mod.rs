@@ -1,7 +1,9 @@
 pub mod models;
 pub mod schema;
 
+#[allow(unused_imports)]
 pub use models::*;
+#[allow(unused_imports)]
 pub use schema::*;
 
 use surrealdb::engine::local::Db;
