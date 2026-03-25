@@ -25,6 +25,14 @@ impl ToolHandler {
             "generate_doc" => self.generate_doc(arguments),
             "find_large_functions" => self.find_large_functions(arguments),
             "get_tested_by" => self.get_tested_by(arguments),
+            "get_doc_for_file" => self.get_doc_for_file(arguments),
+            "get_files_for_doc" => self.get_files_for_doc(arguments),
+            "get_doc_structure" => self.get_doc_structure(arguments),
+            "get_traceability" => self.get_traceability(arguments),
+            "search_by_requirement" => self.search_by_requirement(arguments),
+            "get_doc_tree" => self.get_doc_tree(arguments),
+            "get_code_tree" => self.get_code_tree(arguments),
+            "find_related_docs" => self.find_related_docs(arguments),
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }
@@ -359,6 +367,251 @@ impl ToolHandler {
             .collect();
 
         Ok(json!({ "tests": tests }))
+    }
+
+    fn get_doc_for_file(&self, args: &Value) -> Result<Value, String> {
+        let file = args["file"].as_str().ok_or("Missing 'file' parameter")?;
+
+        let relationships = self
+            .graph_engine
+            .get_relationships(file)
+            .map_err(|e| e.to_string())?;
+
+        let docs: Vec<_> = relationships
+            .iter()
+            .filter(|r| r.rel_type == "documented_by")
+            .map(|r| {
+                json!({
+                    "doc": r.source_qualified,
+                    "context": r.metadata.get("context").and_then(|v| v.as_str()).unwrap_or("")
+                })
+            })
+            .collect();
+
+        Ok(json!({ "documents": docs }))
+    }
+
+    fn get_files_for_doc(&self, args: &Value) -> Result<Value, String> {
+        let doc = args["doc"].as_str().ok_or("Missing 'doc' parameter")?;
+
+        let relationships = self
+            .graph_engine
+            .get_relationships(doc)
+            .map_err(|e| e.to_string())?;
+
+        let files: Vec<_> = relationships
+            .iter()
+            .filter(|r| r.rel_type == "references")
+            .map(|r| {
+                json!({
+                    "file": r.target_qualified,
+                    "context": r.metadata.get("context").and_then(|v| v.as_str()).unwrap_or("")
+                })
+            })
+            .collect();
+
+        Ok(json!({ "files": files }))
+    }
+
+    fn get_doc_structure(&self, _args: &Value) -> Result<Value, String> {
+        let elements = self
+            .graph_engine
+            .all_elements()
+            .map_err(|e| e.to_string())?;
+
+        let docs: Vec<_> = elements
+            .iter()
+            .filter(|e| e.element_type == "document")
+            .map(|e| {
+                let category = e.metadata.get("category")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("root");
+                let headings = e.metadata.get("headings")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
+                    .unwrap_or_default();
+                json!({
+                    "qualified_name": e.qualified_name,
+                    "title": e.name,
+                    "category": category,
+                    "headings": headings,
+                    "file_path": e.file_path
+                })
+            })
+            .collect();
+
+        Ok(json!({ "documents": docs }))
+    }
+
+    fn get_traceability(&self, args: &Value) -> Result<Value, String> {
+        let element = args["element"].as_str().ok_or("Missing 'element' parameter")?;
+
+        let report = self
+            .graph_engine
+            .get_traceability_report(element)
+            .map_err(|e| e.to_string())?;
+
+        let entries: Vec<_> = report.entries
+            .iter()
+            .map(|e| {
+                let doc_links: Vec<_> = e.doc_links
+                    .iter()
+                    .map(|d| json!({
+                        "doc": d.doc_qualified,
+                        "title": d.doc_title,
+                        "context": d.context
+                    }))
+                    .collect();
+                json!({
+                    "element": e.element_qualified,
+                    "description": e.description,
+                    "user_story_id": e.user_story_id,
+                    "feature_id": e.feature_id,
+                    "doc_links": doc_links
+                })
+            })
+            .collect();
+
+        Ok(json!({ "traceability": entries }))
+    }
+
+    fn search_by_requirement(&self, args: &Value) -> Result<Value, String> {
+        let requirement_id = args["requirement_id"].as_str().ok_or("Missing 'requirement_id' parameter")?;
+
+        let entries = self
+            .graph_engine
+            .get_code_for_requirement(requirement_id)
+            .map_err(|e| e.to_string())?;
+
+        let results: Vec<_> = entries
+            .iter()
+            .map(|e| {
+                let doc_links: Vec<_> = e.doc_links
+                    .iter()
+                    .map(|d| json!({
+                        "doc": d.doc_qualified,
+                        "title": d.doc_title
+                    }))
+                    .collect();
+                json!({
+                    "element": e.element_qualified,
+                    "description": e.description,
+                    "doc_links": doc_links
+                })
+            })
+            .collect();
+
+        Ok(json!({ "code_elements": results }))
+    }
+
+    fn get_doc_tree(&self, _args: &Value) -> Result<Value, String> {
+        let elements = self
+            .graph_engine
+            .all_elements()
+            .map_err(|e| e.to_string())?;
+
+        let mut tree = serde_json::Map::new();
+
+        for elem in elements.iter().filter(|e| e.element_type == "document" || e.element_type == "doc_section") {
+            let parts: Vec<&str> = elem.qualified_name.split("::").collect();
+            if parts.is_empty() {
+                continue;
+            }
+
+            let category = elem.metadata.get("category")
+                .and_then(|v| v.as_str())
+                .unwrap_or("root");
+
+            let node = json!({
+                "qualified_name": elem.qualified_name,
+                "name": elem.name,
+                "type": elem.element_type,
+                "line_start": elem.line_start,
+                "line_end": elem.line_end
+            });
+
+            if !tree.contains_key(category) {
+                tree.insert(category.to_string(), json!({}));
+            }
+
+            if let Some(cat_obj) = tree.get_mut(category) {
+                if let Some(obj) = cat_obj.as_object_mut() {
+                    obj.insert(elem.name.clone(), node);
+                }
+            }
+        }
+
+        Ok(json!({ "tree": tree }))
+    }
+
+    fn get_code_tree(&self, _args: &Value) -> Result<Value, String> {
+        let elements = self
+            .graph_engine
+            .all_elements()
+            .map_err(|e| e.to_string())?;
+
+        let mut tree = serde_json::Map::new();
+
+        for elem in &elements {
+            if elem.element_type == "file" || elem.qualified_name.contains("::") {
+                continue;
+            }
+
+            let parts: Vec<&str> = elem.file_path.split('/').collect();
+            if parts.is_empty() {
+                continue;
+            }
+
+            let file_name = parts.last().unwrap_or(&"");
+
+            if !tree.contains_key(*file_name) {
+                tree.insert(file_name.to_string(), json!({
+                    "file_path": elem.file_path,
+                    "elements": Vec::<Value>::new()
+                }));
+            }
+
+            if let Some(file_obj) = tree.get_mut(*file_name) {
+                if let Some(obj) = file_obj.as_object_mut() {
+                    if let Some(elems) = obj.get_mut("elements") {
+                        if let Some(arr) = elems.as_array_mut() {
+                            arr.push(json!({
+                                "qualified_name": elem.qualified_name,
+                                "name": elem.name,
+                                "type": elem.element_type,
+                                "line_start": elem.line_start,
+                                "line_end": elem.line_end
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(json!({ "code_tree": tree }))
+    }
+
+    fn find_related_docs(&self, args: &Value) -> Result<Value, String> {
+        let file = args["file"].as_str().ok_or("Missing 'file' parameter")?;
+
+        let relationships = self
+            .graph_engine
+            .get_relationships(file)
+            .map_err(|e| e.to_string())?;
+
+        let related: Vec<_> = relationships
+            .iter()
+            .filter(|r| r.rel_type == "documented_by" || r.rel_type == "references")
+            .map(|r| {
+                json!({
+                    "doc": if r.rel_type == "documented_by" { r.source_qualified.clone() } else { r.target_qualified.clone() },
+                    "relationship": r.rel_type,
+                    "context": r.metadata.get("context").and_then(|v| v.as_str()).unwrap_or("")
+                })
+            })
+            .collect();
+
+        Ok(json!({ "related_docs": related }))
     }
 }
 

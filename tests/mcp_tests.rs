@@ -62,6 +62,7 @@ mod tool_registry_tests {
         let tools = ToolRegistry::list_tools();
         for tool in &tools {
             let props = tool.input_schema.get("properties").unwrap();
+            let is_empty = props.as_object().map(|o| o.is_empty()).unwrap_or(false);
             let has_file = props.get("file").is_some();
             let has_files = props.get("files").is_some();
             let has_query = props.get("query").is_some();
@@ -69,10 +70,13 @@ mod tool_registry_tests {
             let has_name = props.get("name").is_some();
             let has_function = props.get("function").is_some();
             let has_min_lines = props.get("min_lines").is_some();
+            let has_doc = props.get("doc").is_some();
+            let has_element = props.get("element").is_some();
+            let has_requirement_id = props.get("requirement_id").is_some();
 
             assert!(
-                has_file || has_files || has_query || has_pattern || has_name || has_function || has_min_lines,
-                "Tool {} should have at least one parameter",
+                is_empty || has_file || has_files || has_query || has_pattern || has_name || has_function || has_min_lines || has_doc || has_element || has_requirement_id,
+                "Tool {} should have at least one parameter or empty properties",
                 tool.name
             );
         }

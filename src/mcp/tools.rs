@@ -127,6 +127,80 @@ impl ToolRegistry {
                     }
                 }),
             },
+            ToolDefinition {
+                name: "get_doc_for_file".to_string(),
+                description: "Get documentation files that reference a code element".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "file": {"type": "string"}
+                    }
+                }),
+            },
+            ToolDefinition {
+                name: "get_files_for_doc".to_string(),
+                description: "Get code elements referenced in a documentation file".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "doc": {"type": "string"}
+                    }
+                }),
+            },
+            ToolDefinition {
+                name: "get_doc_structure".to_string(),
+                description: "Get documentation directory structure".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            ToolDefinition {
+                name: "get_traceability".to_string(),
+                description: "Get full traceability chain for a code element".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "element": {"type": "string"}
+                    }
+                }),
+            },
+            ToolDefinition {
+                name: "search_by_requirement".to_string(),
+                description: "Find code elements related to a specific requirement".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "requirement_id": {"type": "string"}
+                    }
+                }),
+            },
+            ToolDefinition {
+                name: "get_doc_tree".to_string(),
+                description: "Get documentation tree structure with hierarchy".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            ToolDefinition {
+                name: "get_code_tree".to_string(),
+                description: "Get codebase structure".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            ToolDefinition {
+                name: "find_related_docs".to_string(),
+                description: "Find documentation related to a code change".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "file": {"type": "string"}
+                    }
+                }),
+            },
         ]
     }
 }
