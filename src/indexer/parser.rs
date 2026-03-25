@@ -5,6 +5,7 @@ pub struct ParserManager {
     pub go_parser: Parser,
     pub ts_parser: Parser,
     pub python_parser: Parser,
+    pub rust_parser: Parser,
 }
 
 impl ParserManager {
@@ -13,6 +14,7 @@ impl ParserManager {
             go_parser: Parser::new(),
             ts_parser: Parser::new(),
             python_parser: Parser::new(),
+            rust_parser: Parser::new(),
         }
     }
 
@@ -20,10 +22,12 @@ impl ParserManager {
         let go_lang: tree_sitter::Language = tree_sitter_go::LANGUAGE.into();
         let ts_lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
         let py_lang: tree_sitter::Language = tree_sitter_python::LANGUAGE.into();
+        let rust_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
 
         self.go_parser.set_language(&go_lang)?;
         self.ts_parser.set_language(&ts_lang)?;
         self.python_parser.set_language(&py_lang)?;
+        self.rust_parser.set_language(&rust_lang)?;
 
         Ok(())
     }
@@ -33,6 +37,7 @@ impl ParserManager {
             "go" => Some(&mut self.go_parser),
             "typescript" | "javascript" => Some(&mut self.ts_parser),
             "python" => Some(&mut self.python_parser),
+            "rust" => Some(&mut self.rust_parser),
             _ => None,
         }
     }
@@ -85,7 +90,7 @@ mod tests {
     #[test]
     fn test_get_parser_for_unknown_returns_none() {
         let mut pm = ParserManager::new();
-        assert!(pm.get_parser_for_language("rust").is_none());
+        assert!(pm.get_parser_for_language("unknown").is_none());
         assert!(pm.get_parser_for_language("").is_none());
     }
 

@@ -12,7 +12,7 @@ use walkdir::WalkDir;
 
 pub fn find_files_sync(root: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let mut files = Vec::new();
-    let extensions = ["go", "ts", "js", "py"];
+    let extensions = ["go", "ts", "js", "py", "rs"];
 
     for entry in WalkDir::new(root)
         .follow_links(true)
@@ -47,6 +47,8 @@ pub fn index_file_sync(
         "typescript"
     } else if file_path.ends_with(".py") {
         "python"
+    } else if file_path.ends_with(".rs") {
+        "rust"
     } else {
         return Ok(0);
     };
