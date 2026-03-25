@@ -14,5 +14,40 @@ pub fn init_db(db_path: &Path) -> Result<CozoDb, Box<dyn std::error::Error>> {
 
     let db = cozo::new_cozo_sqlite(path_str)?;
 
+    init_schema(&db)?;
+
     Ok(db)
+}
+
+fn init_schema(db: &CozoDb) -> Result<(), Box<dyn std::error::Error>> {
+    let check_relations = r#"::relations"#;
+    let relations_result = db.run_script(check_relations, Default::default())?;
+    let existing_relations: std::collections::HashSet<String> = relations_result
+        .rows
+        .iter()
+        .filter_map(|row| row.get(0).and_then(|v| v.as_str().map(String::from)))
+        .collect();
+
+    if !existing_relations.contains("code_elements") {
+        let create_code_elements = r#":create code_elements {qualified_name: String, element_type: String, name: String, file_path: String, line_start: Int, line_end: Int, language: String, parent_qualified: String?, metadata: String}"#;
+        if let Err(e) = db.run_script(create_code_elements, Default::default()) {
+            eprintln!("Failed to create code_elements: {:?}", e);
+        }
+    }
+
+    if !existing_relations.contains("relationships") {
+        let create_relationships = r#":create relationships {source_qualified: String, target_qualified: String, rel_type: String, metadata: String}"#;
+        if let Err(e) = db.run_script(create_relationships, Default::default()) {
+            eprintln!("Failed to create relationships: {:?}", e);
+        }
+    }
+
+    if !existing_relations.contains("business_logic") {
+        let create_business_logic = r#":create business_logic {element_qualified: String, description: String, user_story_id: String?, feature_id: String?}"#;
+        if let Err(e) = db.run_script(create_business_logic, Default::default()) {
+            eprintln!("Failed to create business_logic: {:?}", e);
+        }
+    }
+
+    Ok(())
 }

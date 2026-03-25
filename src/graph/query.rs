@@ -30,10 +30,7 @@ impl GraphEngine {
         qualified_name: &str,
     ) -> Result<Option<CodeElement>, Box<dyn std::error::Error>> {
         let query = format!(
-            r#"
-            ?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] <- code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata]
-            where qualified_name = "{}"
-            "#,
+            r#"?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata], qualified_name = "{}""#,
             qualified_name
         );
 
@@ -66,10 +63,7 @@ impl GraphEngine {
         file_path: &str,
     ) -> Result<Vec<CodeElement>, Box<dyn std::error::Error>> {
         let query = format!(
-            r#"
-            ?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] <- code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata]
-            where file_path = "{}"
-            "#,
+            r#"?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata], file_path = "{}""#,
             file_path
         );
 
@@ -115,10 +109,7 @@ impl GraphEngine {
         source: &str,
     ) -> Result<Vec<Relationship>, Box<dyn std::error::Error>> {
         let query = format!(
-            r#"
-            ?[source_qualified, target_qualified, rel_type, metadata] <- relationships[source_qualified, target_qualified, rel_type, metadata]
-            where source_qualified = "{}"
-            "#,
+            r#"?[source_qualified, target_qualified, rel_type, metadata] := *relationships[source_qualified, target_qualified, rel_type, metadata], source_qualified = "{}""#,
             source
         );
 
@@ -147,10 +138,7 @@ impl GraphEngine {
         target: &str,
     ) -> Result<Vec<Relationship>, Box<dyn std::error::Error>> {
         let query = format!(
-            r#"
-            ?[source_qualified, target_qualified, rel_type, metadata] <- relationships[source_qualified, target_qualified, rel_type, metadata]
-            where target_qualified = "{}"
-            "#,
+            r#"?[source_qualified, target_qualified, rel_type, metadata] := *relationships[source_qualified, target_qualified, rel_type, metadata], target_qualified = "{}""#,
             target
         );
 
@@ -187,7 +175,7 @@ impl GraphEngine {
     }
 
     pub fn all_elements(&self) -> Result<Vec<CodeElement>, Box<dyn std::error::Error>> {
-        let query = r#"?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] <- code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata]"#;
+        let query = r#"?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata]"#;
 
         let result = self.db.run_script(query, std::collections::BTreeMap::new())?;
         let rows = result.rows;
@@ -215,7 +203,7 @@ impl GraphEngine {
     }
 
     pub fn all_relationships(&self) -> Result<Vec<Relationship>, Box<dyn std::error::Error>> {
-        let query = r#"?[source_qualified, target_qualified, rel_type, metadata] <- relationships[source_qualified, target_qualified, rel_type, metadata]"#;
+        let query = r#"?[source_qualified, target_qualified, rel_type, metadata] := *relationships[source_qualified, target_qualified, rel_type, metadata]"#;
 
         let result = self.db.run_script(query, std::collections::BTreeMap::new())?;
         let rows = result.rows;
@@ -242,10 +230,7 @@ impl GraphEngine {
         parent_qualified: &str,
     ) -> Result<Vec<CodeElement>, Box<dyn std::error::Error>> {
         let query = format!(
-            r#"
-            ?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] <- code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata]
-            where parent_qualified = "{}"
-            "#,
+            r#"?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata], parent_qualified = "{}""#,
             parent_qualified
         );
 
@@ -279,10 +264,7 @@ impl GraphEngine {
         element_qualified: &str,
     ) -> Result<Option<BusinessLogic>, Box<dyn std::error::Error>> {
         let query = format!(
-            r#"
-            ?[element_qualified, description, user_story_id, feature_id] <- business_logic[element_qualified, description, user_story_id, feature_id]
-            where element_qualified = "{}"
-            "#,
+            r#"?[element_qualified, description, user_story_id, feature_id] := *business_logic[element_qualified, description, user_story_id, feature_id], element_qualified = "{}""#,
             element_qualified
         );
 
@@ -310,10 +292,7 @@ impl GraphEngine {
         let like_pattern = format!("%{}%", query_str.to_lowercase());
         
         let query = format!(
-            r#"
-            ?[element_qualified, description, user_story_id, feature_id] <- business_logic[element_qualified, description, user_story_id, feature_id]
-            where description =~ "{}"
-            "#,
+            r#"?[element_qualified, description, user_story_id, feature_id] := *business_logic[element_qualified, description, user_story_id, feature_id], regex_matches(lowercase(description), "{}")"#,
             like_pattern
         );
 
@@ -335,7 +314,7 @@ impl GraphEngine {
     }
 
     pub fn all_annotations(&self) -> Result<Vec<BusinessLogic>, Box<dyn std::error::Error>> {
-        let query = r#"?[element_qualified, description, user_story_id, feature_id] <- business_logic[element_qualified, description, user_story_id, feature_id]"#;
+        let query = r#"?[element_qualified, description, user_story_id, feature_id] := *business_logic[element_qualified, description, user_story_id, feature_id]"#;
 
         let result = self.db.run_script(query, std::collections::BTreeMap::new())?;
         let rows = result.rows;
@@ -364,16 +343,12 @@ impl GraphEngine {
 
         for element in elements {
             let metadata_str = serde_json::to_string(&element.metadata)?;
-            let parent_val = element.parent_qualified.as_ref()
+            let parent_qualified_val = element.parent_qualified.as_ref()
                 .map(|s| format!("\"{}\"", s))
                 .unwrap_or_else(|| "null".to_string());
             
             let query = format!(
-                r#"
-                ?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] <- [
-                    ["{}": String, "{}": String, "{}": String, "{}": String, {}: Int, {}: Int, "{}": String, {}: String, "{}": String]
-                ] :put code_elements {{ qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata }}
-                "#,
+                r#"?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] <- [[ "{0}", "{1}", "{2}", "{3}", {4}, {5}, "{6}", {7}, "{8}" ]] :put code_elements {{ qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata }}"#,
                 element.qualified_name,
                 element.element_type,
                 element.name,
@@ -381,7 +356,7 @@ impl GraphEngine {
                 element.line_start,
                 element.line_end,
                 element.language,
-                parent_val,
+                parent_qualified_val,
                 metadata_str,
             );
             
@@ -414,11 +389,7 @@ impl GraphEngine {
             let metadata_str = serde_json::to_string(&rel.metadata)?;
             
             let query = format!(
-                r#"
-                ?[source_qualified, target_qualified, rel_type, metadata] <- [
-                    ["{}": String, "{}": String, "{}": String, "{}": String]
-                ] :put relationships {{ source_qualified, target_qualified, rel_type, metadata }}
-                "#,
+                r#"?[source_qualified, target_qualified, rel_type, metadata] <- [[ "{0}", "{1}", "{2}", "{3}" ]] :put relationships {{ source_qualified, target_qualified, rel_type, metadata }}"#,
                 rel.source_qualified,
                 rel.target_qualified,
                 rel.rel_type,
@@ -447,9 +418,7 @@ impl GraphEngine {
         file_path: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let query = format!(
-            r#"
-            :delete code_elements where file_path = "{}"
-            "#,
+            r#":delete code_elements where file_path = "{}""#,
             file_path
         );
         
@@ -472,9 +441,7 @@ impl GraphEngine {
         source: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let query = format!(
-            r#"
-            :delete relationships where source_qualified = "{}"
-            "#,
+            r#":delete relationships where source_qualified = "{}""#,
             source
         );
         
@@ -497,10 +464,7 @@ impl GraphEngine {
         file_path: &str,
     ) -> Result<Vec<CodeElement>, Box<dyn std::error::Error>> {
         let query = format!(
-            r#"
-            ?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] <- code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata]
-            where file_path = "{}"
-            "#,
+            r#"?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata], file_path = "{}""#,
             file_path
         );
 
@@ -536,10 +500,7 @@ impl GraphEngine {
         let pattern = format!("%{}%", name.to_lowercase());
         
         let query = format!(
-            r#"
-            ?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] <- code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata]
-            where name =~ "{}"
-            "#,
+            r#"?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata], regex_matches(lowercase(name), "{}")"#,
             pattern
         );
 
@@ -573,10 +534,7 @@ impl GraphEngine {
         element_type: &str,
     ) -> Result<Vec<CodeElement>, Box<dyn std::error::Error>> {
         let query = format!(
-            r#"
-            ?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] <- code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata]
-            where element_type = "{}"
-            "#,
+            r#"?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata], element_type = "{}""#,
             element_type
         );
 
@@ -612,10 +570,7 @@ impl GraphEngine {
         let like_pattern = format!("%{}%", pattern);
         
         let query = format!(
-            r#"
-            ?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] <- code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata]
-            where qualified_name =~ "{}"
-            "#,
+            r#"?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata], regex_matches(lowercase(qualified_name), "{}")"#,
             like_pattern
         );
 
@@ -649,10 +604,7 @@ impl GraphEngine {
         rel_type: &str,
     ) -> Result<Vec<Relationship>, Box<dyn std::error::Error>> {
         let query = format!(
-            r#"
-            ?[source_qualified, target_qualified, rel_type, metadata] <- relationships[source_qualified, target_qualified, rel_type, metadata]
-            where rel_type = "{}"
-            "#,
+            r#"?[source_qualified, target_qualified, rel_type, metadata] := *relationships[source_qualified, target_qualified, rel_type, metadata], rel_type = "{}""#,
             rel_type
         );
 
@@ -681,10 +633,7 @@ impl GraphEngine {
         min_lines: u32,
     ) -> Result<Vec<CodeElement>, Box<dyn std::error::Error>> {
         let query = format!(
-            r#"
-            ?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] <- code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata]
-            where element_type = "function" and (line_end - line_start + 1) >= {}
-            "#,
+            r#"?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata], element_type = "function", (line_end - line_start + 1) >= {}"#,
             min_lines
         );
 
@@ -725,10 +674,7 @@ impl GraphEngine {
         language: &str,
     ) -> Result<Vec<CodeElement>, Box<dyn std::error::Error>> {
         let query = format!(
-            r#"
-            ?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] <- code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata]
-            where element_type = "function" and language = "{}" and (line_end - line_start + 1) >= {}
-            "#,
+            r#"?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata] := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata], element_type = "function", language = "{}", (line_end - line_start + 1) >= {}"#,
             language,
             min_lines
         );

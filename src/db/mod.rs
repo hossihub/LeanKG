@@ -23,11 +23,7 @@ pub fn create_business_logic(
         .unwrap_or_else(|| "null".to_string());
 
     let query = format!(
-        r#"
-        ?[element_qualified, description, user_story_id, feature_id] <- [
-            ["{}": String, "{}": String, {}: String, {}: String]
-        ] :put business_logic {{ element_qualified, description, user_story_id, feature_id }}
-        "#,
+        r#"?[element_qualified, description, user_story_id, feature_id] <- [[ "{0}", "{1}", {2}, {3} ]] :put business_logic {{ element_qualified, description, user_story_id, feature_id }}"#,
         element_qualified, description, user_story_val, feature_val,
     );
 
@@ -47,10 +43,7 @@ pub fn get_business_logic(
     element_qualified: &str,
 ) -> Result<Option<models::BusinessLogic>, Box<dyn std::error::Error>> {
     let query = format!(
-        r#"
-        ?[element_qualified, description, user_story_id, feature_id] <- business_logic[element_qualified, description, user_story_id, feature_id]
-        where element_qualified = "{}"
-        "#,
+        r#"?[element_qualified, description, user_story_id, feature_id] := *business_logic[element_qualified, description, user_story_id, feature_id], element_qualified = "{}""#,
         element_qualified
     );
 
@@ -89,11 +82,7 @@ pub fn update_business_logic(
         .unwrap_or_else(|| "null".to_string());
 
     let query = format!(
-        r#"
-        ?[element_qualified, description, user_story_id, feature_id] <- [
-            ["{}": String, "{}": String, {}: String, {}: String]
-        ] :put business_logic {{ element_qualified, description, user_story_id, feature_id }}
-        "#,
+        r#"?[element_qualified, description, user_story_id, feature_id] <- [[ "{0}", "{1}", {2}, {3} ]] :put business_logic {{ element_qualified, description, user_story_id, feature_id }}"#,
         element_qualified, description, user_story_val, feature_val,
     );
 
@@ -113,9 +102,7 @@ pub fn delete_business_logic(
     element_qualified: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let query = format!(
-        r#"
-        :delete business_logic where element_qualified = "{}"
-        "#,
+        r#":delete business_logic where element_qualified = "{}""#,
         element_qualified
     );
 
@@ -128,10 +115,7 @@ pub fn get_by_user_story(
     user_story_id: &str,
 ) -> Result<Vec<models::BusinessLogic>, Box<dyn std::error::Error>> {
     let query = format!(
-        r#"
-        ?[element_qualified, description, user_story_id, feature_id] <- business_logic[element_qualified, description, user_story_id, feature_id]
-        where user_story_id = "{}"
-        "#,
+        r#"?[element_qualified, description, user_story_id, feature_id] := *business_logic[element_qualified, description, user_story_id, feature_id], user_story_id = "{}""#,
         user_story_id
     );
 
@@ -161,10 +145,7 @@ pub fn get_by_feature(
     feature_id: &str,
 ) -> Result<Vec<models::BusinessLogic>, Box<dyn std::error::Error>> {
     let query = format!(
-        r#"
-        ?[element_qualified, description, user_story_id, feature_id] <- business_logic[element_qualified, description, user_story_id, feature_id]
-        where feature_id = "{}"
-        "#,
+        r#"?[element_qualified, description, user_story_id, feature_id] := *business_logic[element_qualified, description, user_story_id, feature_id], feature_id = "{}""#,
         feature_id
     );
 
@@ -196,10 +177,7 @@ pub fn search_business_logic(
     let like_pattern = format!("%{}%", query_str.to_lowercase());
 
     let query = format!(
-        r#"
-        ?[element_qualified, description, user_story_id, feature_id] <- business_logic[element_qualified, description, user_story_id, feature_id]
-        where description =~ "{}"
-        "#,
+        r#"?[element_qualified, description, user_story_id, feature_id] := *business_logic[element_qualified, description, user_story_id, feature_id], regex_matches(lowercase(description), "{}")"#,
         like_pattern
     );
 
@@ -227,7 +205,7 @@ pub fn search_business_logic(
 pub fn all_business_logic(
     db: &CozoDb,
 ) -> Result<Vec<models::BusinessLogic>, Box<dyn std::error::Error>> {
-    let query = r#"?[element_qualified, description, user_story_id, feature_id] <- business_logic[element_qualified, description, user_story_id, feature_id]"#;
+    let query = r#"?[element_qualified, description, user_story_id, feature_id] := *business_logic[element_qualified, description, user_story_id, feature_id]"#;
 
     let result = db.run_script(query, std::collections::BTreeMap::new())?;
     let rows = result.rows;
