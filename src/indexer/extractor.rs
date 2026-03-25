@@ -139,7 +139,7 @@ impl<'a> EntityExtractor<'a> {
             | "import_statement"
             | "import_from_statement"
             | "use_declaration" => {
-                if let Some(source) = self.get_import_source(node, node_type) {
+                for source in self.get_import_sources(node, node_type) {
                     relationships.push(Relationship {
                         id: None,
                         source_qualified: self.file_path.to_string(),
@@ -152,7 +152,7 @@ impl<'a> EntityExtractor<'a> {
             "call_expression" => {
                 self.extract_call(node, parent, elements, relationships);
             }
-            "decorator" => {
+            "decorator" | "decorator_definition" => {
                 self.extract_decorator(node, parent, elements);
             }
             _ => {}
@@ -171,6 +171,7 @@ impl<'a> EntityExtractor<'a> {
                         | "class_declaration"
                         | "type_declaration"
                         | "class_def"
+                        | "class_definition"
                         | "type_spec"
                         | "struct_item"
                 ) {
@@ -253,10 +254,10 @@ impl<'a> EntityExtractor<'a> {
         }
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
-            if child.kind() == "method_set" || child.kind() == "method_elem" {
-                return true;
-            }
-            if child.kind() == "interface_type" {
+            if child.kind() == "method_set"
+                || child.kind() == "method_elem"
+                || child.kind() == "interface_type"
+            {
                 return true;
             }
         }
@@ -325,24 +326,46 @@ impl<'a> EntityExtractor<'a> {
     fn extract_decorator(&self, node: Node, parent: Option<&str>, elements: &mut Vec<CodeElement>) {
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
-            if child.kind() == "identifier" {
-                if let Some(bytes) = self.source.get(child.byte_range()) {
-                    if let Ok(name) = std::str::from_utf8(bytes) {
-                        let qualified_name = format!("{}::@{}", self.file_path, name);
-                        elements.push(CodeElement {
-                            qualified_name: qualified_name.clone(),
-                            element_type: "decorator".to_string(),
-                            name: name.to_string(),
-                            file_path: self.file_path.to_string(),
-                            line_start: node.start_position().row as u32 + 1,
-                            line_end: node.end_position().row as u32 + 1,
-                            language: self.language.to_string(),
-                            parent_qualified: parent.map(String::from),
-                            metadata: serde_json::json!({}),
-                        });
+            match child.kind() {
+                "identifier" | "dotted_name" => {
+                    if let Some(bytes) = self.source.get(child.byte_range()) {
+                        if let Ok(name) = std::str::from_utf8(bytes) {
+                            let qualified_name = format!("{}::@{}", self.file_path, name);
+                            elements.push(CodeElement {
+                                qualified_name: qualified_name.clone(),
+                                element_type: "decorator".to_string(),
+                                name: name.to_string(),
+                                file_path: self.file_path.to_string(),
+                                line_start: node.start_position().row as u32 + 1,
+                                line_end: node.end_position().row as u32 + 1,
+                                language: self.language.to_string(),
+                                parent_qualified: parent.map(String::from),
+                                metadata: serde_json::json!({}),
+                            });
+                        }
                     }
+                    return;
                 }
-                break;
+                "attribute" => {
+                    if let Some(bytes) = self.source.get(child.byte_range()) {
+                        if let Ok(name) = std::str::from_utf8(bytes) {
+                            let qualified_name = format!("{}::@{}", self.file_path, name);
+                            elements.push(CodeElement {
+                                qualified_name: qualified_name.clone(),
+                                element_type: "decorator".to_string(),
+                                name: name.to_string(),
+                                file_path: self.file_path.to_string(),
+                                line_start: node.start_position().row as u32 + 1,
+                                line_end: node.end_position().row as u32 + 1,
+                                language: self.language.to_string(),
+                                parent_qualified: parent.map(String::from),
+                                metadata: serde_json::json!({}),
+                            });
+                        }
+                    }
+                    return;
+                }
+                _ => {}
             }
             if child.kind() == "attribute" {
                 if let Some(bytes) = self.source.get(child.byte_range()) {
@@ -453,26 +476,38 @@ impl<'a> EntityExtractor<'a> {
         None
     }
 
-    fn get_import_source(&self, node: Node, node_type: &str) -> Option<String> {
+    fn get_import_sources(&self, node: Node, node_type: &str) -> Vec<String> {
+        let mut sources = Vec::new();
+
+        // Python: from X import Y
         if node_type == "import_from_statement" {
             if let Some(module_node) = node.child_by_field_name("module_name") {
-                return std::str::from_utf8(self.source.get(module_node.byte_range())?)
-                    .ok()
-                    .map(String::from);
+                if let Some(bytes) = self.source.get(module_node.byte_range()) {
+                    if let Ok(s) = std::str::from_utf8(bytes) {
+                        sources.push(s.to_string());
+                    }
+                }
             }
+            return sources;
         }
 
+        // Python: import X
         if node_type == "import_statement" {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 if child.kind() == "dotted_name" || child.kind() == "identifier" {
-                    return std::str::from_utf8(self.source.get(child.byte_range())?)
-                        .ok()
-                        .map(String::from);
+                    if let Some(bytes) = self.source.get(child.byte_range()) {
+                        if let Ok(s) = std::str::from_utf8(bytes) {
+                            sources.push(s.to_string());
+                        }
+                    }
+                    return sources;
                 }
             }
+            return sources;
         }
 
+        // Rust: use X::Y
         if node_type == "use_declaration" {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
@@ -480,29 +515,50 @@ impl<'a> EntityExtractor<'a> {
                     || child.kind() == "scoped_identifier"
                     || child.kind() == "dotted_identifier"
                 {
-                    return std::str::from_utf8(self.source.get(child.byte_range())?)
-                        .ok()
-                        .map(String::from);
+                    if let Some(bytes) = self.source.get(child.byte_range()) {
+                        if let Ok(s) = std::str::from_utf8(bytes) {
+                            sources.push(s.to_string());
+                        }
+                    }
+                    return sources;
                 }
             }
         }
 
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            if child.kind() == "import_specifier" {
-                if let Some(name_node) = child.child_by_field_name("name") {
-                    return std::str::from_utf8(self.source.get(name_node.byte_range())?)
-                        .ok()
-                        .map(String::from);
+        // Go and JS/TS: walk all children to find string literals and import_specifiers
+        let mut stack = vec![node];
+        while let Some(current) = stack.pop() {
+            let mut cursor = current.walk();
+            for child in current.children(&mut cursor) {
+                match child.kind() {
+                    "interpreted_string_literal" | "raw_string_literal" | "string" => {
+                        if let Some(bytes) = self.source.get(child.byte_range()) {
+                            if let Ok(s) = std::str::from_utf8(bytes) {
+                                let trimmed = s.trim_matches('"').trim_matches('`').to_string();
+                                if !trimmed.is_empty() {
+                                    sources.push(trimmed);
+                                }
+                            }
+                        }
+                    }
+                    "import_specifier" => {
+                        if let Some(name_node) = child.child_by_field_name("name") {
+                            if let Some(bytes) = self.source.get(name_node.byte_range()) {
+                                if let Ok(s) = std::str::from_utf8(bytes) {
+                                    sources.push(s.to_string());
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        if child.child_count() > 0 {
+                            stack.push(child);
+                        }
+                    }
                 }
             }
-            if child.kind() == "string" {
-                return std::str::from_utf8(self.source.get(child.byte_range())?)
-                    .ok()
-                    .map(|s| s.trim_matches('"').to_string());
-            }
         }
-        None
+        sources
     }
 }
 

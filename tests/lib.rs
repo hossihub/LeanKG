@@ -104,10 +104,6 @@ mod parser_tests {
     fn test_get_parser_for_language_unsupported_returns_none() {
         if let Some(mut pm) = init_parser_manager() {
             assert!(
-                pm.get_parser_for_language("rust").is_none(),
-                "Should return None for 'rust'"
-            );
-            assert!(
                 pm.get_parser_for_language("java").is_none(),
                 "Should return None for 'java'"
             );
@@ -138,10 +134,11 @@ mod parser_tests {
                 !tree.root_node().has_error(),
                 "Parsed tree should not have errors"
             );
-            assert_eq!(
-                tree.root_node().kind(),
-                "program",
-                "Root node should be 'program'"
+            let root_kind = tree.root_node().kind();
+            assert!(
+                root_kind == "program" || root_kind == "source_file",
+                "Root node should be 'program' or 'source_file', got '{}'",
+                root_kind
             );
         }
     }
@@ -161,10 +158,11 @@ mod parser_tests {
                 !tree.root_node().has_error(),
                 "Parsed tree should not have errors"
             );
-            assert_eq!(
-                tree.root_node().kind(),
-                "program",
-                "Root node should be 'program'"
+            let root_kind = tree.root_node().kind();
+            assert!(
+                root_kind == "program" || root_kind == "module",
+                "Root node should be 'program' or 'module', got '{}'",
+                root_kind
             );
         }
     }

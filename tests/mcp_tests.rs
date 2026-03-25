@@ -63,6 +63,7 @@ mod tool_registry_tests {
         for tool in &tools {
             let props = tool.input_schema.get("properties").unwrap();
             let has_file = props.get("file").is_some();
+            let has_files = props.get("files").is_some();
             let has_query = props.get("query").is_some();
             let has_pattern = props.get("pattern").is_some();
             let has_name = props.get("name").is_some();
@@ -70,7 +71,7 @@ mod tool_registry_tests {
             let has_min_lines = props.get("min_lines").is_some();
 
             assert!(
-                has_file || has_query || has_pattern || has_name || has_function || has_min_lines,
+                has_file || has_files || has_query || has_pattern || has_name || has_function || has_min_lines,
                 "Tool {} should have at least one parameter",
                 tool.name
             );
