@@ -160,7 +160,8 @@ impl MCPServer {
         let mut parser_manager = crate::indexer::ParserManager::new();
         parser_manager.init_parsers().map_err(|e| format!("Parser init error: {}", e))?;
 
-        let files = crate::indexer::find_files_sync(".").map_err(|e| format!("Find files error: {}", e))?;
+        let root_str = project_root.to_string_lossy().to_string();
+        let files = crate::indexer::find_files_sync(&root_str).map_err(|e| format!("Find files error: {}", e))?;
         let mut indexed = 0;
 
         for file_path in &files {

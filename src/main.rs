@@ -1,3 +1,4 @@
+mod benchmark;
 mod cli;
 mod config;
 mod db;
@@ -184,6 +185,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let project_path = find_project_root()?;
             let db_path = project_path.join(".leankg");
             find_by_domain(&domain, &db_path)?;
+        }
+        cli::CLICommand::Benchmark { category } => {
+            benchmark::run(category)?;
         }
     }
 
