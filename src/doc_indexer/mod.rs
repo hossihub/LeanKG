@@ -130,6 +130,7 @@ impl DocIndexer {
             metadata: serde_json::json!({
                 "category": category,
                 "title": title,
+                "headings": headings,
             }),
         };
 
@@ -265,7 +266,6 @@ impl DocIndexer {
         let mut refs = Vec::new();
         let file_pattern =
             regex::Regex::new(r"\b([\w\-/]+\.(?:go|rs|ts|tsx|js|jsx|py))\b").unwrap();
-        let qualified_pattern = regex::Regex::new(r"([\w\.\-/]+(?:::\w+)+)").unwrap();
         let mut in_code_block = false;
 
         for line in content.lines() {
@@ -281,15 +281,7 @@ impl DocIndexer {
             for cap in file_pattern.captures_iter(trimmed) {
                 if let Some(m) = cap.get(1) {
                     let target = m.as_str().to_string();
-                    let context = trimmed.chars().take(100).collect::<String>();
-                    refs.push((target, context));
-                }
-            }
-
-            for cap in qualified_pattern.captures_iter(trimmed) {
-                if let Some(m) = cap.get(0) {
-                    let target = m.as_str().to_string();
-                    if target.contains("::") {
+                    if target.len() >= 5 {
                         let context = trimmed.chars().take(100).collect::<String>();
                         refs.push((target, context));
                     }
