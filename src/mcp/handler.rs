@@ -357,6 +357,10 @@ impl ToolHandler {
             .as_str()
             .ok_or("Missing 'pattern' parameter")?;
 
+        let element_type_filter = args["element_type"]
+            .as_str()
+            .map(String::from);
+
         let elements = self
             .graph_engine
             .all_elements()
@@ -364,7 +368,13 @@ impl ToolHandler {
 
         let matches: Vec<_> = elements
             .iter()
-            .filter(|e| e.file_path.contains(pattern) || e.qualified_name.contains(pattern))
+            .filter(|e| {
+                let pattern_match = e.file_path.contains(pattern) || e.qualified_name.contains(pattern);
+                let type_match = element_type_filter.as_ref()
+                    .map(|et| &e.element_type == et)
+                    .unwrap_or(true);
+                pattern_match && type_match
+            })
             .take(50)
             .map(|e| {
                 json!({
