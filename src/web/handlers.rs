@@ -259,7 +259,7 @@ pub async fn graph() -> axum::response::Html<String> {
             function filterTestElements(data) {
                 const nodeIds = new Set();
                 data.nodes.forEach(n => { if (!isTestElement(n)) nodeIds.add(n.id); });
-                const filteredEdges = data.edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
+                const filteredEdges = data.edges.filter(e => { const sid = getEdgeId(e.source), tid = getEdgeId(e.target); return nodeIds.has(sid) && nodeIds.has(tid); });
                 const filteredNodes = data.nodes.filter(n => nodeIds.has(n.id));
                 return { nodes: filteredNodes, edges: filteredEdges };
             }
@@ -280,6 +280,7 @@ pub async fn graph() -> axum::response::Html<String> {
                     .translate(-midX, -midY);
                 svg.transition().duration(750).call(zoom.transform, transform);
             }
+            function getEdgeId(node) { return typeof node === 'string' ? node : node.id; }
             async function loadGraph() {
                 try {
                     const response = await fetch('/api/graph/data');
@@ -306,17 +307,17 @@ pub async fn graph() -> axum::response::Html<String> {
                 const edgeNodeIds = new Set();
                 if (currentFilter === 'all') {
                     data.nodes.forEach(n => { filteredNodes.push(n); nodeIds.add(n.id); });
-                    data.edges.forEach(e => { if (nodeIds.has(e.source) && nodeIds.has(e.target)) { filteredEdges.push(e); edgeNodeIds.add(e.source); edgeNodeIds.add(e.target); } });
+                    data.edges.forEach(e => { const sid = getEdgeId(e.source), tid = getEdgeId(e.target); if (nodeIds.has(sid) && nodeIds.has(tid)) { filteredEdges.push(e); edgeNodeIds.add(sid); edgeNodeIds.add(tid); } });
                     const finalNodes = filteredNodes.filter(n => edgeNodeIds.has(n.id));
                     return { nodes: finalNodes, edges: filteredEdges };
                 } else if (currentFilter === 'document') {
                     data.nodes.forEach(n => { if (docTypes.includes(n.element_type)) { filteredNodes.push(n); nodeIds.add(n.id); } });
-                    data.edges.forEach(e => { if (nodeIds.has(e.target)) { filteredEdges.push(e); edgeNodeIds.add(e.source); edgeNodeIds.add(e.target); } });
+                    data.edges.forEach(e => { const sid = getEdgeId(e.source), tid = getEdgeId(e.target); if (nodeIds.has(tid)) { filteredEdges.push(e); edgeNodeIds.add(sid); edgeNodeIds.add(tid); } });
                     const relatedNodes = data.nodes.filter(n => edgeNodeIds.has(n.id));
                     return { nodes: relatedNodes, edges: filteredEdges };
                 } else if (currentFilter === 'function') {
                     data.nodes.forEach(n => { if (funcTypes.includes(n.element_type)) { filteredNodes.push(n); nodeIds.add(n.id); } });
-                    data.edges.forEach(e => { if (nodeIds.has(e.source) || nodeIds.has(e.target)) { filteredEdges.push(e); edgeNodeIds.add(e.source); edgeNodeIds.add(e.target); } });
+                    data.edges.forEach(e => { const sid = getEdgeId(e.source), tid = getEdgeId(e.target); if (nodeIds.has(sid) || nodeIds.has(tid)) { filteredEdges.push(e); edgeNodeIds.add(sid); edgeNodeIds.add(tid); } });
                     const relatedNodes = data.nodes.filter(n => edgeNodeIds.has(n.id));
                     return { nodes: relatedNodes, edges: filteredEdges };
                 }
@@ -327,18 +328,13 @@ pub async fn graph() -> axum::response::Html<String> {
                     return data;
                 }
                 const nodeConnectCount = {};
-                data.edges.forEach(e => {
-                    nodeConnectCount[e.source] = (nodeConnectCount[e.source] || 0) + 1;
-                    nodeConnectCount[e.target] = (nodeConnectCount[e.target] || 0) + 1;
-                });
+                data.edges.forEach(e => { const sid = getEdgeId(e.source), tid = getEdgeId(e.target); nodeConnectCount[sid] = (nodeConnectCount[sid] || 0) + 1; nodeConnectCount[tid] = (nodeConnectCount[tid] || 0) + 1; });
                 const sortedNodes = [...data.nodes].sort((a, b) => 
                     (nodeConnectCount[b.id] || 0) - (nodeConnectCount[a.id] || 0)
                 );
                 const topNodeIds = new Set(sortedNodes.slice(0, 500).map(n => n.id));
                 const filteredNodes = data.nodes.filter(n => topNodeIds.has(n.id));
-                const filteredEdges = data.edges.filter(e => 
-                    topNodeIds.has(e.source) && topNodeIds.has(e.target)
-                ).slice(0, 1000);
+                const filteredEdges = data.edges.filter(e => { const sid = getEdgeId(e.source), tid = getEdgeId(e.target); return topNodeIds.has(sid) && topNodeIds.has(tid); }).slice(0, 1000);
                 return { nodes: filteredNodes, edges: filteredEdges };
             }
             function initGraph(fullData) {
