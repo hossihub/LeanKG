@@ -1033,24 +1033,69 @@ impl GraphEngine {
         let mut resolved = 0;
 
         for row in &result.rows {
-            let _source = row[0].as_str().unwrap_or("").to_string();
-            let _unresolved = row[1].as_str().unwrap_or("").to_string();
-            let _bare_name = _unresolved.trim_start_matches("__unresolved__");
-            let _meta_str = row[2].as_str().unwrap_or("{}");
+            let source = row[0].as_str().unwrap_or("").to_string();
+            let unresolved = row[1].as_str().unwrap_or("").to_string();
+            let bare_name = unresolved.trim_start_matches("__unresolved__");
+            let meta_str = row[2].as_str().unwrap_or("{}");
 
-            let lookup_query = r#"?[qualified_name] := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata], element_type = "function", name = $bare :limit 1"#;
-            let mut params = std::collections::BTreeMap::new();
-            params.insert("bare".to_string(), serde_json::Value::String(_bare_name.to_string()));
+            let callee_file_hint: Option<String> = serde_json::from_str::<serde_json::Value>(meta_str)
+                .ok()
+                .and_then(|m| m.get("callee_file_hint").cloned())
+                .and_then(|v| v.as_str().map(String::from));
 
-            if let Ok(res) = self.db.run_script(lookup_query, params) {
-                if let Some(target_row) = res.rows.first() {
-                    if let Some(_target_qn) = target_row[0].as_str() {
-                        resolved += 1;
-                    }
-                }
+            if let Some(target_qn) = self.find_function_by_name(&bare_name, callee_file_hint.as_deref())? {
+                self.insert_relationship(&Relationship {
+                    id: None,
+                    source_qualified: source.clone(),
+                    target_qualified: target_qn,
+                    rel_type: "calls".to_string(),
+                    metadata: serde_json::json!({}),
+                })?;
+                resolved += 1;
             }
+
+            self.delete_relationship(&source, &unresolved)?;
         }
 
         Ok(resolved)
+    }
+
+    fn find_function_by_name(&self, name: &str, file_hint: Option<&str>) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        if let Some(hint) = file_hint {
+            let safe_name = escape_datalog(name);
+            let safe_hint = escape_datalog(hint);
+            let query = format!(r#"
+                ?[qualified_name] := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata],
+                  element_type = "function",
+                  name = "{}",
+                  file_path = "{}"
+                :limit 1
+            "#, safe_name, safe_hint);
+            let result = self.db.run_script(&query, Default::default())?;
+            if let Some(row) = result.rows.first() {
+                return Ok(row[0].as_str().map(String::from));
+            }
+        }
+
+        let safe_name = escape_datalog(name);
+        let query = format!(r#"
+            ?[qualified_name] := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, metadata],
+              element_type = "function",
+              name = "{}"
+            :limit 1
+        "#, safe_name);
+        let result = self.db.run_script(&query, Default::default())?;
+        Ok(result.rows.first().and_then(|row| row[0].as_str().map(String::from)))
+    }
+
+    fn delete_relationship(&self, source: &str, target: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let safe_source = escape_datalog(source);
+        let safe_target = escape_datalog(target);
+        let query = format!(r#"
+            :rm relationships[source_qualified, target_qualified, rel_type, metadata]
+            := source_qualified = "{}", target_qualified = "{}"
+        "#, safe_source, safe_target);
+        self.db.run_script(&query, Default::default())?;
+        Ok(())
     }
 }
