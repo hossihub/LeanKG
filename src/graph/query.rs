@@ -176,7 +176,7 @@ impl GraphEngine {
         Ok(relationships)
     }
 
-    pub fn get_dependents(
+    pub fn get_relationships_for_target(
         &self,
         target: &str,
     ) -> Result<Vec<Relationship>, Box<dyn std::error::Error>> {
@@ -215,6 +215,13 @@ impl GraphEngine {
         }
 
         Ok(relationships)
+    }
+
+    pub fn get_dependents(
+        &self,
+        target: &str,
+    ) -> Result<Vec<Relationship>, Box<dyn std::error::Error>> {
+        self.get_relationships_for_target(target)
     }
 
     pub fn all_elements(&self) -> Result<Vec<CodeElement>, Box<dyn std::error::Error>> {

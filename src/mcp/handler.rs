@@ -723,7 +723,7 @@ impl ToolHandler {
             .filter(|r| r.rel_type == "documented_by")
             .map(|r| {
                 json!({
-                    "doc": r.source_qualified,
+                    "doc": r.target_qualified,
                     "context": r.metadata.get("context").and_then(|v| v.as_str()).unwrap_or("")
                 })
             })
@@ -972,7 +972,7 @@ impl ToolHandler {
             .filter(|r| r.rel_type == "documented_by" || r.rel_type == "references")
             .map(|r| {
                 json!({
-                    "doc": if r.rel_type == "documented_by" { r.source_qualified.clone() } else { r.target_qualified.clone() },
+                    "doc": if r.rel_type == "documented_by" { r.target_qualified.clone() } else { r.source_qualified.clone() },
                     "relationship": r.rel_type,
                     "context": r.metadata.get("context").and_then(|v| v.as_str()).unwrap_or("")
                 })
