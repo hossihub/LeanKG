@@ -140,32 +140,36 @@ impl ToolRegistry {
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "file": {"type": "string"},
+                        "file": {"type": "string", "description": "File to get context for"},
                         "signature_only": {"type": "boolean", "default": true, "description": "Return only signatures (default). Set false for full body metadata."},
                         "max_tokens": {"type": "integer", "default": 4000, "description": "Token budget cap"}
-                    }
+                    },
+                    "required": ["file"]
                 }),
             },
             ToolDefinition {
                 name: "find_function".to_string(),
-                description: "Locate function definition".to_string(),
+                description: "Locate function definition by name. Optionally scope to a file.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string"}
-                    }
+                        "name": {"type": "string", "description": "Function name to search for"},
+                        "file": {"type": "string", "description": "Optional file to scope the search to"}
+                    },
+                    "required": ["name"]
                 }),
             },
             ToolDefinition {
                 name: "get_call_graph".to_string(),
-                description: "Get function call chain with bounded depth and result limit".to_string(),
+                description: "Get bounded function call chain. Use depth=1 for direct callees, depth=2 for two hops. Avoid depth>3 to prevent neighbor explosion.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "function": {"type": "string"},
-                        "depth": {"type": "integer", "description": "Maximum call graph depth (default: 2, max: 3)", "default": 2},
-                        "max_results": {"type": "integer", "description": "Maximum number of results to return (default: 30)", "default": 30}
-                    }
+                        "function": {"type": "string", "description": "Function to get call graph for"},
+                        "depth": {"type": "integer", "default": 2, "description": "Maximum call graph depth (default: 2, max: 3)"},
+                        "max_results": {"type": "integer", "default": 30, "description": "Maximum number of results (default: 30)"}
+                    },
+                    "required": ["function"]
                 }),
             },
             ToolDefinition {
@@ -174,10 +178,11 @@ impl ToolRegistry {
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string"},
-                        "element_type": {"type": "string", "description": "Filter by element type (e.g., 'function', 'struct', 'module')"},
-                        "limit": {"type": "integer", "description": "Maximum number of results to return (default: 100)"}
-                    }
+                        "query": {"type": "string", "description": "Search query string"},
+                        "element_type": {"type": "string", "enum": ["file", "function", "struct", "class", "module", "import"], "description": "Filter by element type"},
+                        "limit": {"type": "integer", "default": 20, "description": "Maximum number of results (default: 20, max: 50)"}
+                    },
+                    "required": ["query"]
                 }),
             },
             ToolDefinition {
@@ -186,8 +191,9 @@ impl ToolRegistry {
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "file": {"type": "string"}
-                    }
+                        "file": {"type": "string", "description": "File to generate documentation for"}
+                    },
+                    "required": ["file"]
                 }),
             },
             ToolDefinition {
@@ -196,8 +202,9 @@ impl ToolRegistry {
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "min_lines": {"type": "integer", "default": 50}
-                    }
+                        "min_lines": {"type": "integer", "default": 50, "description": "Minimum line count threshold (default: 50)"}
+                    },
+                    "required": []
                 }),
             },
             ToolDefinition {
@@ -206,8 +213,9 @@ impl ToolRegistry {
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "file": {"type": "string"}
-                    }
+                        "file": {"type": "string", "description": "File to get test coverage for"}
+                    },
+                    "required": ["file"]
                 }),
             },
             ToolDefinition {
@@ -216,8 +224,9 @@ impl ToolRegistry {
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "file": {"type": "string"}
-                    }
+                        "file": {"type": "string", "description": "File to get documentation for"}
+                    },
+                    "required": ["file"]
                 }),
             },
             ToolDefinition {
@@ -226,8 +235,9 @@ impl ToolRegistry {
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "doc": {"type": "string"}
-                    }
+                        "doc": {"type": "string", "description": "Documentation file path"}
+                    },
+                    "required": ["doc"]
                 }),
             },
             ToolDefinition {
@@ -235,7 +245,8 @@ impl ToolRegistry {
                 description: "Get documentation directory structure".to_string(),
                 input_schema: json!({
                     "type": "object",
-                    "properties": {}
+                    "properties": {},
+                    "required": []
                 }),
             },
             ToolDefinition {
@@ -244,8 +255,9 @@ impl ToolRegistry {
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "element": {"type": "string"}
-                    }
+                        "element": {"type": "string", "description": "Code element to trace"}
+                    },
+                    "required": ["element"]
                 }),
             },
             ToolDefinition {
@@ -254,8 +266,9 @@ impl ToolRegistry {
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "requirement_id": {"type": "string"}
-                    }
+                        "requirement_id": {"type": "string", "description": "Requirement ID to search for"}
+                    },
+                    "required": ["requirement_id"]
                 }),
             },
             ToolDefinition {
@@ -263,7 +276,8 @@ impl ToolRegistry {
                 description: "Get documentation tree structure with hierarchy".to_string(),
                 input_schema: json!({
                     "type": "object",
-                    "properties": {}
+                    "properties": {},
+                    "required": []
                 }),
             },
             ToolDefinition {
@@ -271,7 +285,8 @@ impl ToolRegistry {
                 description: "Get codebase structure".to_string(),
                 input_schema: json!({
                     "type": "object",
-                    "properties": {}
+                    "properties": {},
+                    "required": []
                 }),
             },
             ToolDefinition {
@@ -280,8 +295,9 @@ impl ToolRegistry {
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "file": {"type": "string"}
-                    }
+                        "file": {"type": "string", "description": "File that was changed"}
+                    },
+                    "required": ["file"]
                 }),
             },
             ToolDefinition {
@@ -289,7 +305,8 @@ impl ToolRegistry {
                 description: "Returns 'Hello, World!'".to_string(),
                 input_schema: json!({
                     "type": "object",
-                    "properties": {}
+                    "properties": {},
+                    "required": []
                 }),
             },
         ]

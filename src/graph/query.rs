@@ -979,6 +979,51 @@ impl GraphEngine {
         self.run_element_query(&query)
     }
 
+    pub fn get_call_graph_bounded(
+        &self,
+        source_qualified: &str,
+        max_depth: u32,
+        max_results: usize,
+    ) -> Result<Vec<(String, String, u32)>, Box<dyn std::error::Error>> {
+        let safe_src = escape_datalog(source_qualified);
+        let query = match max_depth {
+            1 => format!(
+                r#"?[src, tgt, depth] :=
+                   *relationships["{src}", tgt, "calls", _],
+                   src = "{src}", depth = 1
+                   :limit {limit}"#,
+                src = safe_src, limit = max_results,
+            ),
+            2 => format!(
+                r#"hop1[src, tgt] := *relationships[src, tgt, "calls", _], src = "{src}"
+                   hop2[src2, tgt2] := hop1[_, src2], *relationships[src2, tgt2, "calls", _]
+                   ?[src, tgt, depth] := hop1[src, tgt], depth = 1
+                   ?[src, tgt, depth] := hop2[src, tgt], depth = 2
+                   :limit {limit}"#,
+                src = safe_src, limit = max_results,
+            ),
+            _ => format!(
+                r#"hop1[src, tgt] := *relationships[src, tgt, "calls", _], src = "{src}"
+                   hop2[s2, t2] := hop1[_, s2], *relationships[s2, t2, "calls", _]
+                   hop3[s3, t3] := hop2[_, s3], *relationships[s3, t3, "calls", _]
+                   ?[src, tgt, depth] := hop1[src, tgt], depth = 1
+                   ?[src, tgt, depth] := hop2[src, tgt], depth = 2
+                   ?[src, tgt, depth] := hop3[src, tgt], depth = 3
+                   :limit {limit}"#,
+                src = safe_src, limit = max_results,
+            ),
+        };
+
+        let result = self.db.run_script(&query, Default::default())?;
+        Ok(result.rows.iter().filter_map(|row| {
+            Some((
+                row[0].as_str()?.to_string(),
+                row[1].as_str()?.to_string(),
+                row[2].as_i64()? as u32,
+            ))
+        }).collect())
+    }
+
     pub fn resolve_call_edges(&self) -> Result<usize, Box<dyn std::error::Error>> {
         let query = r#"
             ?[source_qualified, target_qualified, metadata]
