@@ -9,5 +9,6 @@ pub mod doc_indexer;
 pub mod graph;
 pub mod indexer;
 pub mod mcp;
+pub mod registry;
 pub mod watcher;
 pub mod benchmark;

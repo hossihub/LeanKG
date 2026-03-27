@@ -7,6 +7,7 @@ mod doc_indexer;
 mod graph;
 mod indexer;
 mod mcp;
+mod registry;
 mod watcher;
 mod web;
 
@@ -192,6 +193,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "kilo" | _ => benchmark::CliTool::Kilo,
             };
             benchmark::run(category, cli_tool)?;
+        }
+        cli::CLICommand::Register { name } => {
+            register_repo(&name)?;
+        }
+        cli::CLICommand::Unregister { name } => {
+            unregister_repo(&name)?;
+        }
+        cli::CLICommand::List => {
+            list_repos()?;
+        }
+        cli::CLICommand::StatusRepo { name } => {
+            status_repo(&name)?;
+        }
+        cli::CLICommand::Setup {} => {
+            setup_global()?;
         }
     }
 
@@ -877,5 +893,121 @@ fn find_oversized_functions(
         }
     }
 
+    Ok(())
+}
+
+fn register_repo(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut registry = registry::Registry::load()?;
+    let current_dir = std::env::current_dir()?;
+    let path = current_dir.to_string_lossy().to_string();
+    
+    registry.register(name.to_string(), path)?;
+    println!("Registered repository '{}' at {}", name, current_dir.display());
+    Ok(())
+}
+
+fn unregister_repo(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut registry = registry::Registry::load()?;
+    
+    if registry.get_repo(name).is_none() {
+        println!("Repository '{}' not found in registry", name);
+        return Ok(());
+    }
+    
+    registry.unregister(name)?;
+    println!("Unregistered repository '{}'", name);
+    Ok(())
+}
+
+fn list_repos() -> Result<(), Box<dyn std::error::Error>> {
+    let registry = registry::Registry::load()?;
+    let repos = registry.list_repos();
+    
+    if repos.is_empty() {
+        println!("No repositories registered. Run 'leankg register <name>' to add one.");
+        return Ok(());
+    }
+    
+    println!("Registered repositories:");
+    for (name, entry) in repos {
+        println!("  - {}: {} (indexed: {:?})", name, entry.path, entry.last_indexed);
+    }
+    Ok(())
+}
+
+fn status_repo(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let registry = registry::Registry::load()?;
+    
+    match registry.get_repo(name) {
+        Some(entry) => {
+            println!("Repository: {}", name);
+            println!("  Path: {}", entry.path);
+            println!("  Last indexed: {:?}", entry.last_indexed);
+            println!("  Element count: {:?}", entry.element_count);
+            
+            let db_path = std::path::Path::new(&entry.path).join(".leankg");
+            if db_path.exists() {
+                if let Ok(db) = db::schema::init_db(&db_path) {
+                    let graph_engine = graph::GraphEngine::new(db);
+                    if let Ok(elements) = graph_engine.all_elements() {
+                        println!("  Current elements: {}", elements.len());
+                    }
+                    if let Ok(relationships) = graph_engine.all_relationships() {
+                        println!("  Current relationships: {}", relationships.len());
+                    }
+                }
+            } else {
+                println!("  Status: Not indexed (no .leankg directory found)");
+            }
+        }
+        None => {
+            println!("Repository '{}' not found in registry", name);
+        }
+    }
+    Ok(())
+}
+
+fn setup_global() -> Result<(), Box<dyn std::error::Error>> {
+    let registry = registry::Registry::load()?;
+    let repos = registry.list_repos();
+    
+    if repos.is_empty() {
+        println!("No repositories registered. Run 'leankg register <name>' to add one.");
+        return Ok(());
+    }
+    
+    println!("Setting up MCP configuration for {} repository(ies)...", repos.len());
+    
+    let exe_path = std::env::current_exe()?;
+    let config_dir = std::path::Path::new(&std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
+        .join(".config")
+        .join("mcp");
+    
+    std::fs::create_dir_all(&config_dir)?;
+    
+    let mut mcp_servers: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    
+    for (name, entry) in &repos {
+        let server_name = format!("leankg-{}", name);
+        mcp_servers.insert(
+            server_name,
+            serde_json::json!({
+                "command": exe_path.to_string_lossy(),
+                "args": ["mcp-stdio"],
+                "cwd": entry.path
+            }),
+        );
+        println!("  Configured MCP for '{}' at {}", name, entry.path);
+    }
+    
+    let mcp_config = serde_json::json!({
+        "mcpServers": mcp_servers
+    });
+    
+    let config_path = config_dir.join("leankg-global.json");
+    std::fs::write(&config_path, serde_json::to_string_pretty(&mcp_config)?)?;
+    println!("\nGlobal MCP config written to: {}", config_path.display());
+    println!("You can now use 'opencode --mcp-config ~/.config/mcp/leankg-global.json' to access all repositories.");
+    
     Ok(())
 }

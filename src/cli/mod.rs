@@ -134,4 +134,23 @@ pub enum CLICommand {
         #[arg(long, default_value = "kilo")]
         cli: String,
     },
+    /// Register current directory in global registry
+    Register {
+        /// Name for the repository
+        name: String,
+    },
+    /// Unregister a repository from global registry
+    Unregister {
+        /// Name of the repository to unregister
+        name: String,
+    },
+    /// List all registered repositories
+    List,
+    /// Show status for a registered repository
+    StatusRepo {
+        /// Name of the repository
+        name: String,
+    },
+    /// Global setup: configure MCP for all registered repos at once
+    Setup {},
 }
