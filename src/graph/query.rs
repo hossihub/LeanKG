@@ -6,7 +6,17 @@ use tokio::sync::RwLock;
 use tracing::debug;
 
 fn escape_datalog(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+    // First escape backslashes, then escape all regex metacharacters
+    let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+    let meta_chars = ['.', '*', '+', '?', '[', ']', '(', ')', '{', '}', '^', '$', '|'];
+    let mut result = String::with_capacity(escaped.len() * 2);
+    for c in escaped.chars() {
+        if meta_chars.contains(&c) {
+            result.push('\\');
+        }
+        result.push(c);
+    }
+    result
 }
 
 #[derive(Clone)]
@@ -1033,19 +1043,30 @@ impl GraphEngine {
         limit: usize,
     ) -> Result<Vec<CodeElement>, Box<dyn std::error::Error>> {
         let safe_name = escape_datalog(&name.to_lowercase());
-        let type_clause = match element_type {
-            Some(t) => format!(r#", element_type = "{}""#, escape_datalog(t)),
-            None => String::new(),
+        let (filter_clause, has_type_filter) = match element_type {
+            Some(t) => (format!(r#", element_type = "{}""#, escape_datalog(t)), true),
+            None => (String::new(), false),
         };
-        let query = format!(
-            r#"?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, cluster_id, cluster_label, metadata]
-               := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, cluster_id, cluster_label, metadata]{type_clause},
-              regex_matches(lowercase(name), "{pattern}")
-           :limit {limit}"#,
-            type_clause = type_clause,
-            pattern = safe_name,
-            limit = limit,
-        );
+        let query = if has_type_filter {
+            format!(
+                r#"?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, cluster_id, cluster_label, metadata]
+                   := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, cluster_id, cluster_label, metadata]{filter_clause},
+                  regex_matches(lowercase(name), "{pattern}")
+               :limit {limit}"#,
+                filter_clause = filter_clause,
+                pattern = safe_name,
+                limit = limit,
+            )
+        } else {
+            format!(
+                r#"?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, cluster_id, cluster_label, metadata]
+                   := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, cluster_id, cluster_label, metadata],
+                  regex_matches(lowercase(name), "{pattern}")
+               :limit {limit}"#,
+                pattern = safe_name,
+                limit = limit,
+            )
+        };
         self.run_element_query(&query)
     }
 

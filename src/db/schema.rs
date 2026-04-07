@@ -33,6 +33,9 @@ fn init_schema(db: &CozoDb) -> Result<(), Box<dyn std::error::Error>> {
         if let Err(e) = db.run_script(create_code_elements, Default::default()) {
             eprintln!("Failed to create code_elements: {:?}", e);
         }
+    } else {
+        // Validate schema has correct column count
+        validate_code_elements_schema(db)?;
     }
 
     if !existing_relations.contains("relationships") {
@@ -60,5 +63,28 @@ fn init_schema(db: &CozoDb) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    Ok(())
+}
+
+fn validate_code_elements_schema(db: &CozoDb) -> Result<(), Box<dyn std::error::Error>> {
+    // Get schema info for code_elements
+    let schema_query = r#":schema code_elements"#;
+    match db.run_script(schema_query, Default::default()) {
+        Ok(result) => {
+            // Count the rows (each row is a column definition)
+            let column_count = result.rows.len();
+            const EXPECTED_COLUMNS: usize = 11;
+            if column_count != EXPECTED_COLUMNS {
+                eprintln!(
+                    "WARNING: code_elements schema has {} columns, expected {}. \
+                     Schema may be from an older version. Consider re-indexing.",
+                    column_count, EXPECTED_COLUMNS
+                );
+            }
+        }
+        Err(e) => {
+            tracing::debug!("Could not validate code_elements schema: {:?}", e);
+        }
+    }
     Ok(())
 }
