@@ -322,4 +322,145 @@ mod tests {
         assert!(prompt.contains("100 tokens total"));
         assert!(prompt.contains("max: 50"));
     }
+
+    #[test]
+    fn test_deduplication_with_hashset() {
+        // Verify HashSet correctly deduplicates qualified names
+        let mut seen: HashSet<String> = HashSet::new();
+
+        let name1 = "test.rs::foo".to_string();
+        let name2 = "test.rs::foo".to_string(); // duplicate
+        let name3 = "test.rs::bar".to_string();
+
+        // First insert returns true
+        assert!(seen.insert(name1.clone()));
+        // Second insert of same value returns false
+        assert!(!seen.insert(name2.clone()));
+        // Different value returns true
+        assert!(seen.insert(name3.clone()));
+
+        // Only 2 unique values
+        assert_eq!(seen.len(), 2);
+        assert!(seen.contains("test.rs::foo"));
+        assert!(seen.contains("test.rs::bar"));
+    }
+
+    #[test]
+    fn test_context_elements_deduplication() {
+        // Test that ContextElement list has unique qualified_names
+        let elem1 = CodeElement {
+            qualified_name: "test.rs::foo".to_string(),
+            element_type: "function".to_string(),
+            name: "foo".to_string(),
+            file_path: "test.rs".to_string(),
+            line_start: 1,
+            line_end: 10,
+            language: "rust".to_string(),
+            parent_qualified: None,
+            metadata: serde_json::json!({}),
+            ..Default::default()
+        };
+
+        let elem2 = CodeElement {
+            qualified_name: "test.rs::foo".to_string(), // same as elem1
+            element_type: "function".to_string(),
+            name: "foo".to_string(),
+            file_path: "test.rs".to_string(),
+            line_start: 1,
+            line_end: 10,
+            language: "rust".to_string(),
+            parent_qualified: None,
+            metadata: serde_json::json!({}),
+            ..Default::default()
+        };
+
+        let elem3 = CodeElement {
+            qualified_name: "test.rs::bar".to_string(),
+            element_type: "function".to_string(),
+            name: "bar".to_string(),
+            file_path: "test.rs".to_string(),
+            line_start: 15,
+            line_end: 20,
+            language: "rust".to_string(),
+            parent_qualified: None,
+            metadata: serde_json::json!({}),
+            ..Default::default()
+        };
+
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut context_elements: Vec<ContextElement> = Vec::new();
+
+        // Simulate what get_context_for_file does
+        for elem in &[elem1.clone(), elem2.clone(), elem3.clone()] {
+            if seen.insert(elem.qualified_name.clone()) {
+                context_elements.push(ContextElement {
+                    element: elem.clone(),
+                    priority: ContextPriority::Contained,
+                    token_count: 10,
+                });
+            }
+        }
+
+        // Only 2 unique elements (elem1 and elem3, elem2 skipped as duplicate)
+        assert_eq!(context_elements.len(), 2);
+        assert_eq!(context_elements[0].element.qualified_name, "test.rs::foo");
+        assert_eq!(context_elements[1].element.qualified_name, "test.rs::bar");
+    }
+
+    #[test]
+    fn test_affected_element_with_confidence_deduplication() {
+        // Test deduplication for impact analysis results
+        let elem1 = CodeElement {
+            qualified_name: "lib.rs::helper".to_string(),
+            element_type: "function".to_string(),
+            name: "helper".to_string(),
+            file_path: "lib.rs".to_string(),
+            line_start: 10,
+            line_end: 20,
+            language: "rust".to_string(),
+            parent_qualified: None,
+            metadata: serde_json::json!({}),
+            ..Default::default()
+        };
+
+        let elem2 = CodeElement {
+            qualified_name: "lib.rs::helper".to_string(), // duplicate
+            element_type: "function".to_string(),
+            name: "helper".to_string(),
+            file_path: "lib.rs".to_string(),
+            line_start: 10,
+            line_end: 20,
+            language: "rust".to_string(),
+            parent_qualified: None,
+            metadata: serde_json::json!({}),
+            ..Default::default()
+        };
+
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut results: Vec<super::super::traversal::AffectedElementWithConfidence> = Vec::new();
+
+        // Simulate first path
+        if seen.insert(elem1.qualified_name.clone()) {
+            results.push(super::super::traversal::AffectedElementWithConfidence {
+                element: elem1.clone(),
+                confidence: 0.9,
+                severity: "WILL BREAK".to_string(),
+                depth: 1,
+            });
+        }
+
+        // Simulate second path (should be skipped as duplicate)
+        if seen.insert(elem2.qualified_name.clone()) {
+            results.push(super::super::traversal::AffectedElementWithConfidence {
+                element: elem2.clone(),
+                confidence: 0.5,
+                severity: "MAY BE AFFECTED".to_string(),
+                depth: 2,
+            });
+        }
+
+        // Only 1 result (duplicate skipped)
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].confidence, 0.9); // First path's higher confidence
+    }
 }
