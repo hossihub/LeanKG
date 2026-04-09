@@ -138,15 +138,24 @@ impl MCPServer {
     async fn auto_init_if_needed(&self) -> Result<(), String> {
         let project_root = self.find_project_root()?;
 
-        let leankg_exists =
-            project_root.join(".leankg").exists() || project_root.join("leankg.yaml").exists();
+        let leankg_path = project_root.join(".leankg");
+        let leankg_dir_exists = leankg_path.is_dir();
+        let leankg_yaml_exists = project_root.join("leankg.yaml").exists();
 
-        if leankg_exists {
-            tracing::info!(
-                "LeanKG project already initialized at {}",
-                project_root.display()
-            );
-            return self.auto_index_if_needed().await;
+        if leankg_dir_exists || leankg_yaml_exists {
+            if leankg_dir_exists {
+                tracing::info!(
+                    "LeanKG project already initialized at {}",
+                    project_root.display()
+                );
+                return self.auto_index_if_needed().await;
+            } else {
+                tracing::warn!(
+                    ".leankg exists but is not a directory. Removing and re-initializing..."
+                );
+                std::fs::remove_file(&leankg_path)
+                    .map_err(|e| format!("Failed to remove invalid .leankg file: {}", e))?;
+            }
         }
 
         tracing::info!("LeanKG not found, searching for project root...");
@@ -161,7 +170,7 @@ impl MCPServer {
         }
         std::fs::remove_file(test_file).ok();
 
-        std::fs::create_dir_all(project_root.join(".leankg"))
+        std::fs::create_dir_all(&leankg_path)
             .map_err(|e| format!("Failed to create .leankg: {}", e))?;
         let config = crate::config::ProjectConfig::default();
         let config_yaml = serde_yaml::to_string(&config)
