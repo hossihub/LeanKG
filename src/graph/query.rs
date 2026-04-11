@@ -9,10 +9,6 @@ fn escape_datalog(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-fn escape_regex_for_cozo(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('.', "\\.").replace('*', "\\*").replace('+', "\\+")
-}
-
 fn normalize_path(path: &str) -> String {
     path.strip_prefix("./").unwrap_or(path).to_string()
 }
@@ -284,6 +280,16 @@ impl GraphEngine {
         target: &str,
     ) -> Result<Vec<Relationship>, Box<dyn std::error::Error>> {
         self.get_relationships_for_target(target)
+    }
+
+    pub fn run_raw_query(
+        &self,
+        query: &str,
+    ) -> Result<cozo::NamedRows, Box<dyn std::error::Error + Send + Sync>> {
+        self.db.run_script(query, Default::default()).map_err(|e| {
+            let msg = e.to_string();
+            Box::new(std::io::Error::new(std::io::ErrorKind::Other, msg)) as Box<dyn std::error::Error + Send + Sync>
+        })
     }
 
     pub fn all_elements(&self) -> Result<Vec<CodeElement>, Box<dyn std::error::Error>> {
@@ -816,7 +822,7 @@ impl GraphEngine {
         &self,
         name: &str,
     ) -> Result<Vec<CodeElement>, Box<dyn std::error::Error>> {
-        let pattern = format!("(?i).*{}.*", escape_regex_for_cozo(name));
+        let pattern = format!("(?i){}", name);
         
         let query = r#"?[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, cluster_id, cluster_label, metadata] := *code_elements[qualified_name, element_type, name, file_path, line_start, line_end, language, parent_qualified, cluster_id, cluster_label, metadata], regex_matches(name, $pat)"#;
         let mut params = std::collections::BTreeMap::new();

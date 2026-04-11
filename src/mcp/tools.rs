@@ -385,26 +385,19 @@ impl ToolRegistry {
                 }),
             },
             ToolDefinition {
-                name: "generate_graph_report".to_string(),
-                description: "Generate comprehensive graph report including god nodes, surprising connections, clusters, and metrics.".to_string(),
+                name: "run_raw_query".to_string(),
+                description: "Execute a raw Datalog/Cypher query against the LeanKG CozoDB engine".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "include_sections": {"type": "array", "items": {"type": "string"}, "description": "Optional list of sections to include: god_nodes, surprising_connections, clusters, metrics, dependencies, exports"}
+                        "query": {"type": "string", "description": "The CozoDB Datalog query to execute"},
+                        "params": {
+                            "type": "object",
+                            "description": "Optional parameters for the parameterized query",
+                            "additionalProperties": true
+                        }
                     },
-                    "required": []
-                }),
-            },
-            ToolDefinition {
-                name: "export_graph".to_string(),
-                description: "Export the knowledge graph in specified format.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "format": {"type": "string", "enum": ["json", "html", "svg", "graphml", "neo4j"], "description": "Export format"},
-                        "output_path": {"type": "string", "description": "Path where the exported file will be written"}
-                    },
-                    "required": ["format", "output_path"]
+                    "required": ["query"]
                 }),
             },
         ]
@@ -444,49 +437,5 @@ mod tests {
             assert!(!tool.description.is_empty());
             assert!(tool.input_schema.is_object());
         }
-    }
-
-    #[test]
-    fn test_generate_graph_report_tool() {
-        let tools = ToolRegistry::list_tools();
-        let names: Vec<_> = tools.iter().map(|t| t.name.as_str()).collect();
-        assert!(names.contains(&"generate_graph_report"));
-    }
-
-    #[test]
-    fn test_export_graph_tool() {
-        let tools = ToolRegistry::list_tools();
-        let names: Vec<_> = tools.iter().map(|t| t.name.as_str()).collect();
-        assert!(names.contains(&"export_graph"));
-    }
-
-    #[test]
-    fn test_generate_graph_report_schema() {
-        let tools = ToolRegistry::list_tools();
-        let tool = tools
-            .iter()
-            .find(|t| t.name == "generate_graph_report")
-            .unwrap();
-        let props = tool
-            .input_schema
-            .get("properties")
-            .unwrap()
-            .as_object()
-            .unwrap();
-        assert!(props.contains_key("include_sections"));
-    }
-
-    #[test]
-    fn test_export_graph_schema() {
-        let tools = ToolRegistry::list_tools();
-        let tool = tools.iter().find(|t| t.name == "export_graph").unwrap();
-        let props = tool
-            .input_schema
-            .get("properties")
-            .unwrap()
-            .as_object()
-            .unwrap();
-        assert!(props.contains_key("format"));
-        assert!(props.contains_key("output_path"));
     }
 }

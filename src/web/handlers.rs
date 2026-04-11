@@ -18,7 +18,7 @@ pub struct QueryRequest {
 
 #[derive(Serialize)]
 pub struct QueryResponse {
-    pub result: Vec<serde_json::Value>,
+    pub result: serde_json::Value,
 }
 
 #[derive(Deserialize)]
@@ -39,7 +39,7 @@ pub struct AnnotationRequest {
 #[derive(Serialize, Clone)]
 pub struct GraphData {
     pub nodes: Vec<GraphNode>,
-    pub edges: Vec<GraphEdge>,
+    pub relationships: Vec<GraphRelationship>,
     pub filtered: Option<GraphFilterInfo>,
 }
 
@@ -49,18 +49,30 @@ pub struct GraphFilterInfo {
     pub message: String,
 }
 
+#[derive(serde::Serialize, Clone)]
+pub struct NodeProperties {
+    pub name: String,
+    #[serde(rename = "filePath")]
+    pub file_path: String,
+    #[serde(rename = "elementType")]
+    pub element_type: String,
+}
+
 #[derive(Serialize, Clone)]
 pub struct GraphNode {
     pub id: String,
     pub label: String,
-    pub element_type: String,
-    pub file_path: String,
+    pub properties: NodeProperties,
 }
 
 #[derive(Serialize, Clone)]
-pub struct GraphEdge {
-    pub source: String,
-    pub target: String,
+pub struct GraphRelationship {
+    pub id: String,
+    #[serde(rename = "sourceId")]
+    pub source_id: String,
+    #[serde(rename = "targetId")]
+    pub target_id: String,
+    #[serde(rename = "type")]
     pub rel_type: String,
 }
 
@@ -1558,77 +1570,89 @@ pub async fn api_graph_data(State(state): State<AppState>) -> impl IntoResponse 
         Ok(g) => g.all_relationships().map_err(|e| e.to_string()),
         Err(e) => Err(e.to_string()),
     };
+
+    let mut initial_elements = elements_result.unwrap_or_default();
+    let is_massive = initial_elements.len() > 5000;
+    
+    if is_massive {
+        initial_elements.retain(|e| {
+            let t = e.element_type.to_lowercase();
+            // Retain ONLY structural boundaries to keep parsing fast and browser stable for huge repos
+            matches!(t.as_str(), "project" | "package" | "module" | "folder" | "file" | "class" | "struct" | "trait" | "namespace" | "interface")
+        });
+    }
+    
+    let elements_result: Result<Vec<_>, String> = Ok(initial_elements);
+
     match (elements_result, relationships_result) {
         (Ok(elements), Ok(relationships)) => {
-            let mut nodes: Vec<GraphNode> = elements
+            // Build nodes directly from indexed elements — no synthetic file:: duplication
+            let nodes: Vec<GraphNode> = elements
                 .iter()
-                .map(|e| GraphNode {
-                    id: e.qualified_name.clone(),
-                    label: e.name.clone(),
-                    element_type: e.element_type.clone(),
-                    file_path: e.file_path.clone(),
+                .map(|e| {
+                    let mut capitalized = e.element_type.chars().collect::<Vec<_>>();
+                    if let Some(first) = capitalized.first_mut() {
+                        *first = first.to_ascii_uppercase();
+                    }
+                    GraphNode {
+                        id: e.qualified_name.clone(),
+                        label: capitalized.into_iter().collect(),
+                        properties: NodeProperties {
+                            name: e.name.clone(),
+                            file_path: e.file_path.clone(),
+                            element_type: e.element_type.clone(),
+                        }
+                    }
                 })
                 .collect();
-
-            let mut file_map: std::collections::HashMap<String, Vec<String>> =
-                std::collections::HashMap::new();
-            for element in &elements {
-                file_map
-                    .entry(element.file_path.clone())
-                    .or_default()
-                    .push(element.qualified_name.clone());
-            }
-
-            for (file_path, _element_ids) in &file_map {
-                let file_node = GraphNode {
-                    id: format!("file::{}", file_path),
-                    label: file_path.split('/').last().unwrap_or(file_path).to_string(),
-                    element_type: "file".to_string(),
-                    file_path: file_path.clone(),
-                };
-                nodes.push(file_node);
-            }
 
             let node_ids: std::collections::HashSet<_> =
                 nodes.iter().map(|n| n.id.clone()).collect();
-            let mut existing_edges: std::collections::HashSet<(String, String)> =
+            
+            let mut seen_edges: std::collections::HashSet<(String, String)> =
                 std::collections::HashSet::new();
-            let mut edges: Vec<GraphEdge> = relationships
+            
+            let relationships: Vec<GraphRelationship> = relationships
                 .iter()
-                .filter(|r| {
-                    node_ids.contains(&r.source_qualified) && node_ids.contains(&r.target_qualified)
-                })
-                .filter(|r| !r.rel_type.starts_with("contains"))
-                .map(|r| {
-                    existing_edges.insert((r.source_qualified.clone(), r.target_qualified.clone()));
-                    GraphEdge {
-                        source: r.source_qualified.clone(),
-                        target: r.target_qualified.clone(),
-                        rel_type: r.rel_type.clone(),
+                .filter_map(|r| {
+                    // Resolve source and target to existing node IDs
+                    let resolve_id = |qn: &str| -> Option<String> {
+                        if node_ids.contains(qn) {
+                            return Some(qn.to_string());
+                        }
+                        let stripped = qn.strip_prefix("./").unwrap_or(qn);
+                        if node_ids.contains(stripped) {
+                            return Some(stripped.to_string());
+                        }
+                        None
+                    };
+
+                    let src_id = resolve_id(&r.source_qualified)?;
+                    let tgt_id = resolve_id(&r.target_qualified)?;
+                    
+                    let edge_key = (src_id.clone(), tgt_id.clone());
+                    if seen_edges.contains(&edge_key) {
+                        return None;
                     }
+                    seen_edges.insert(edge_key);
+
+                    // Normalize rel_type to UPPERCASE for frontend EDGE_STYLES parity
+                    let normalized_type = r.rel_type.to_uppercase();
+
+                    Some(GraphRelationship {
+                        id: format!("{}_{}_{}", src_id, normalized_type, tgt_id),
+                        source_id: src_id,
+                        target_id: tgt_id,
+                        rel_type: normalized_type,
+                    })
                 })
                 .collect();
-
-            for (file_path, element_ids) in &file_map {
-                let file_node_id = format!("file::{}", file_path);
-                for element_id in element_ids {
-                    let edge_key = (file_node_id.clone(), element_id.clone());
-                    if !existing_edges.contains(&edge_key) {
-                        existing_edges.insert(edge_key);
-                        edges.push(GraphEdge {
-                            source: file_node_id.clone(),
-                            target: element_id.clone(),
-                            rel_type: "contains".to_string(),
-                        });
-                    }
-                }
-            }
 
             ApiResponse {
                 success: true,
                 data: Some(GraphData {
                     nodes,
-                    edges,
+                    relationships,
                     filtered: None,
                 }),
                 error: None,
@@ -1656,23 +1680,33 @@ pub async fn api_export_graph(State(state): State<AppState>) -> impl IntoRespons
         (Ok(elements), Ok(relationships)) => {
             let nodes: Vec<GraphNode> = elements
                 .iter()
-                .map(|e| GraphNode {
-                    id: e.qualified_name.clone(),
-                    label: e.name.clone(),
-                    element_type: e.element_type.clone(),
-                    file_path: e.file_path.clone(),
+                .map(|e| {
+                    let mut capitalized = e.element_type.chars().collect::<Vec<_>>();
+                    if let Some(first) = capitalized.first_mut() {
+                        *first = first.to_ascii_uppercase();
+                    }
+                    GraphNode {
+                        id: e.qualified_name.clone(),
+                        label: capitalized.into_iter().collect(),
+                        properties: NodeProperties {
+                            name: e.name.clone(),
+                            file_path: e.file_path.clone(),
+                            element_type: e.element_type.clone(),
+                        }
+                    }
                 })
                 .collect();
             let node_ids: std::collections::HashSet<_> =
                 nodes.iter().map(|n| n.id.clone()).collect();
-            let edges: Vec<GraphEdge> = relationships
+            let relationships: Vec<GraphRelationship> = relationships
                 .iter()
                 .filter(|r| {
                     node_ids.contains(&r.source_qualified) && node_ids.contains(&r.target_qualified)
                 })
-                .map(|r| GraphEdge {
-                    source: r.source_qualified.clone(),
-                    target: r.target_qualified.clone(),
+                .map(|r| GraphRelationship {
+                    id: format!("{}_{}_{}", r.source_qualified, r.rel_type, r.target_qualified),
+                    source_id: r.source_qualified.clone(),
+                    target_id: r.target_qualified.clone(),
                     rel_type: r.rel_type.clone(),
                 })
                 .collect();
@@ -1680,7 +1714,7 @@ pub async fn api_export_graph(State(state): State<AppState>) -> impl IntoRespons
                 success: true,
                 data: Some(GraphData {
                     nodes,
-                    edges,
+                    relationships,
                     filtered: None,
                 }),
                 error: None,
@@ -1696,9 +1730,31 @@ pub async fn api_export_graph(State(state): State<AppState>) -> impl IntoRespons
 
 #[allow(dead_code)]
 pub async fn api_query(
-    axum::extract::Json(_req): axum::extract::Json<QueryRequest>,
-) -> Result<axum::extract::Json<QueryResponse>, (StatusCode, &'static str)> {
-    Ok(axum::extract::Json(QueryResponse { result: vec![] }))
+    State(state): State<AppState>,
+    Json(req): Json<QueryRequest>,
+) -> impl IntoResponse {
+    match state.get_graph_engine().await {
+        Ok(engine) => match engine.run_raw_query(&req.query) {
+            Ok(res) => {
+                let val = serde_json::to_value(&res).unwrap_or(serde_json::json!({}));
+                ApiResponse {
+                    success: true,
+                    data: Some(QueryResponse { result: val }),
+                    error: None,
+                }
+            }
+            Err(e) => ApiResponse {
+                success: false,
+                data: None,
+                error: Some(e.to_string()),
+            },
+        },
+        Err(e) => ApiResponse {
+            success: false,
+            data: None,
+            error: Some(e.to_string()),
+        },
+    }
 }
 
 #[derive(Deserialize)]
@@ -2203,6 +2259,58 @@ pub async fn api_github_clone(
             success: false,
             data: None,
             error: Some(format!("Failed to execute git: {}", e)),
+        },
+    }
+}
+
+#[derive(Deserialize)]
+pub struct FileQuery {
+    pub path: String,
+}
+
+#[derive(Serialize)]
+pub struct FileResponse {
+    pub content: String,
+}
+
+pub async fn api_get_file(
+    State(state): State<AppState>,
+    Query(query): Query<FileQuery>,
+) -> impl IntoResponse {
+    let proj_path = state.current_project_path.read().await.clone();
+    
+    // Normalize: strip leading "./" prefix that the indexer stores
+    let clean_path = query.path.strip_prefix("./").unwrap_or(&query.path);
+    let target_path = proj_path.join(clean_path);
+    
+    // Security: canonicalize and verify the resolved path is within the project root
+    let canonical_proj = proj_path.canonicalize().unwrap_or_else(|_| proj_path.clone());
+    let canonical_target = target_path.canonicalize();
+    
+    match canonical_target {
+        Ok(ref resolved) if resolved.starts_with(&canonical_proj) => {
+            match tokio::fs::read_to_string(resolved).await {
+                Ok(content) => ApiResponse::<FileResponse> {
+                    success: true,
+                    data: Some(FileResponse { content }),
+                    error: None,
+                },
+                Err(e) => ApiResponse::<FileResponse> {
+                    success: false,
+                    data: None,
+                    error: Some(format!("Failed to read file '{}': {}", clean_path, e)),
+                },
+            }
+        }
+        Ok(_) => ApiResponse::<FileResponse> {
+            success: false,
+            data: None,
+            error: Some("Access denied: path is outside project directory".to_string()),
+        },
+        Err(e) => ApiResponse::<FileResponse> {
+            success: false,
+            data: None,
+            error: Some(format!("File not found '{}': {}", clean_path, e)),
         },
     }
 }

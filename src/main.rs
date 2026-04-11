@@ -8,7 +8,6 @@ mod db;
 mod doc;
 mod doc_indexer;
 mod graph;
-mod hooks;
 mod indexer;
 mod mcp;
 mod orchestrator;
@@ -35,16 +34,13 @@ pub struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    if !matches!(args.command, cli::CLICommand::McpStdio { watch: _, .. }) {
+    if !matches!(args.command, cli::CLICommand::McpStdio { watch: _ }) {
         tracing_subscriber::fmt::init();
     }
 
     match args.command {
         cli::CLICommand::Version => {
             println!("leankg {}", env!("CARGO_PKG_VERSION"));
-        }
-        cli::CLICommand::Update => {
-            update_leankg().await?;
         }
         cli::CLICommand::Init { path } => {
             init_project(&path)?;
@@ -58,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } => {
             let project_path = find_project_root()?;
             let db_path = project_path.join(".leankg");
-            ensure_db_path(&db_path).await?;
+            tokio::fs::create_dir_all(&db_path).await?;
             let exclude_patterns: Vec<String> = exclude
                 .as_ref()
                 .map(|e| e.split(',').map(|s| s.trim().to_string()).collect())
@@ -92,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
             let project_path = find_project_root()?;
             let db_path = project_path.join(".leankg");
-            ensure_db_path(&db_path).await?;
+            tokio::fs::create_dir_all(&db_path).await.ok();
             web::start_server(port, db_path).await?;
         }
         cli::CLICommand::Web { port } => {
@@ -104,21 +100,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
             let project_path = find_project_root()?;
             let db_path = project_path.join(".leankg");
-            ensure_db_path(&db_path).await?;
+            tokio::fs::create_dir_all(&db_path).await.ok();
             web::start_server(port, db_path).await?;
         }
-        cli::CLICommand::McpStdio { watch, dir, project_path } => {
-            let explicit_project_path = dir.map(|p| std::path::PathBuf::from(p))
-                .or_else(|| project_path.map(|p| std::path::PathBuf::from(p)));
-            let project_path = explicit_project_path.clone().unwrap_or_else(|| find_project_root().unwrap_or_else(|_| std::path::PathBuf::from(".")));
+        cli::CLICommand::McpStdio { watch } => {
+            let project_path = find_project_root()?;
             let db_path = project_path.join(".leankg");
 
-            ensure_db_path(&db_path).await?;
+            tokio::fs::create_dir_all(&db_path).await.ok();
 
             let mcp_server = if watch {
                 mcp::MCPServer::new_with_watch(db_path, project_path.clone())
-            } else if let Some(ref pp) = explicit_project_path {
-                mcp::MCPServer::new_with_project_path(db_path, pp.clone())
             } else {
                 mcp::MCPServer::new(db_path)
             };
@@ -281,7 +273,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli::CLICommand::ApiServe { port, auth } => {
             let project_path = find_project_root()?;
             let db_path = project_path.join(".leankg");
-            ensure_db_path(&db_path).await?;
+            tokio::fs::create_dir_all(&db_path).await.ok();
             api::start_api_server(port, db_path, auth).await?;
         }
         cli::CLICommand::ApiKey { command } => match command {
@@ -324,34 +316,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 cleanup,
             )?;
         }
-        cli::CLICommand::Wiki { output } => {
-            let project_path = find_project_root()?;
-            let db_path = project_path.join(".leankg");
-            generate_wiki(&output, &db_path)?;
-        }
-        cli::CLICommand::Hooks { command } => {
-            let project_path = find_project_root()?;
-            match command {
-                cli::HooksCommand::Install => {
-                    install_hooks(&project_path)?;
-                }
-                cli::HooksCommand::Uninstall => {
-                    uninstall_hooks(&project_path)?;
-                }
-                cli::HooksCommand::Status => {
-                    check_hooks_status(&project_path)?;
-                }
-                cli::HooksCommand::Watch { path } => {
-                    let watch_path = if let Some(p) = path {
-                        std::path::PathBuf::from(p)
-                    } else {
-                        project_path.clone()
-                    };
-                    let db_path = project_path.join(".leankg");
-                    watch_git_events(&watch_path, &db_path).await?;
-                }
-            }
-        }
     }
 
     Ok(())
@@ -359,29 +323,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn find_project_root() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     let current_dir = std::env::current_dir()?;
-    if current_dir.join(".leankg").is_dir() || current_dir.join("leankg.yaml").exists() {
+    if current_dir.join(".leankg").exists() || current_dir.join("leankg.yaml").exists() {
         return Ok(current_dir);
     }
     for parent in current_dir.ancestors() {
-        if parent.join(".leankg").is_dir() || parent.join("leankg.yaml").exists() {
+        if parent.join(".leankg").exists() || parent.join("leankg.yaml").exists() {
             return Ok(parent.to_path_buf());
         }
     }
     Ok(current_dir)
-}
-
-/// Ensures the .leankg directory exists, handling legacy cases where
-/// .leankg was a file instead of a directory.
-async fn ensure_db_path(db_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    if db_path.exists() && !db_path.is_dir() {
-        eprintln!(
-            "Warning: '{}' is a file, removing it and creating directory",
-            db_path.display()
-        );
-        tokio::fs::remove_file(db_path).await?;
-    }
-    tokio::fs::create_dir_all(db_path).await?;
-    Ok(())
 }
 
 fn init_project(path: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -444,15 +394,6 @@ async fn index_codebase(
                     ("java", "java"),
                     ("kt", "kotlin"),
                     ("kts", "kotlin"),
-                    ("cpp", "cpp"),
-                    ("cxx", "cpp"),
-                    ("cc", "cpp"),
-                    ("hpp", "cpp"),
-                    ("h", "cpp"),
-                    ("c", "cpp"),
-                    ("cs", "csharp"),
-                    ("rb", "ruby"),
-                    ("php", "php"),
                 ]
                 .iter()
                 .cloned()
@@ -483,6 +424,18 @@ async fn index_codebase(
 
     let total_elements = indexer::index_files_parallel(&graph_engine, &files, verbose)?;
     println!("Indexed {} files ({} elements)", files.len(), total_elements);
+
+    println!("Resolving call edges...");
+    match graph_engine.resolve_call_edges() {
+        Ok(count) => {
+            if count > 0 {
+                println!("  Resolved {} call edges", count);
+            }
+        }
+        Err(e) => {
+            eprintln!("Warning: Failed to resolve call edges: {}", e);
+        }
+    }
 
     let docs_path = std::path::Path::new("docs");
     if docs_path.exists() {
@@ -602,23 +555,17 @@ fn install_mcp_config() -> Result<(), Box<dyn std::error::Error>> {
     let exe_path =
         std::env::current_exe().map_err(|e| format!("Failed to get current exe path: {}", e))?;
 
-    // Create .cursor/mcp.json for per-project Cursor MCP configuration
     let mcp_config = serde_json::json!({
         "mcpServers": {
             "leankg": {
                 "command": exe_path.to_string_lossy().as_ref(),
-                "args": ["mcp-stdio"]
+                "args": ["mcp-stdio", "--watch"]
             }
         }
     });
 
-    let cursor_dir = std::path::Path::new(".cursor");
-    std::fs::create_dir_all(cursor_dir)?;
-
-    let mcp_path = cursor_dir.join("mcp.json");
-    std::fs::write(&mcp_path, serde_json::to_string_pretty(&mcp_config)?)?;
-    println!("Installed MCP config to .cursor/mcp.json");
-    println!("Restart Cursor to activate LeanKG MCP server for this project.");
+    std::fs::write(".mcp.json", serde_json::to_string_pretty(&mcp_config)?)?;
+    println!("Installed MCP config to .mcp.json");
 
     Ok(())
 }
@@ -1309,41 +1256,36 @@ fn show_metrics(
     }
 
     println!("=== LeanKG Context Metrics ===\n");
-    let display_total = if summary.total_tokens_saved < 0 { 0 } else { summary.total_tokens_saved };
     println!(
         "Total Savings: {} tokens across {} calls",
-        display_total, summary.total_invocations
+        summary.total_tokens_saved, summary.total_invocations
     );
     println!(
         "Average Savings: {:.1}%",
-        summary.average_savings_percent.max(0.0)
+        summary.average_savings_percent
     );
     println!("Retention: {} days", summary.retention_days);
 
     if !summary.by_tool.is_empty() {
         println!("\nBy Tool:");
         for tm in &summary.by_tool {
-            if tm.total_saved > 0 {
-                println!(
-                    "  {}: {} calls,  avg {:.0}% saved, {} tokens saved",
-                    tm.tool_name,
-                    tm.calls,
-                    tm.avg_savings_percent.max(0.0),
-                    tm.total_saved
-                );
-            }
+            println!(
+                "  {}: {} calls,  avg {:.0}% saved, {} tokens saved",
+                tm.tool_name,
+                tm.calls,
+                tm.avg_savings_percent,
+                tm.total_saved
+            );
         }
     }
 
     if !summary.by_day.is_empty() {
         println!("\nBy Day:");
         for dm in &summary.by_day {
-            if dm.savings > 0 {
-                println!(
-                    "  {}:  {} calls, {} tokens saved",
-                    dm.date, dm.calls, dm.savings
-                );
-            }
+            println!(
+                "  {}:  {} calls, {} tokens saved",
+                dm.date, dm.calls, dm.savings
+            );
         }
     }
 
@@ -1368,9 +1310,6 @@ fn seed_test_metrics(db_path: &std::path::Path) -> Result<(), Box<dyn std::error
         ("seed3", "find_function", now - 80, 80i32, 28i32, 5i32, 12i32, 6000i32, 2400i32, 5972i32, 99.5f64, true),
         ("seed4", "search_code", now - 70, 120i32, 52i32, 15i32, 30i32, 14000i32, 5800i32, 13948i32, 99.6f64, true),
         ("seed5", "get_impact_radius", now - 60, 300i32, 180i32, 25i32, 45i32, 25000i32, 10000i32, 24820i32, 99.3f64, true),
-        // Negative savings - these should be filtered out
-        ("seed6", "get_clusters", now - 50, 100i32, 500i32, 5i32, 10i32, 300i32, 100i32, -200i32, -66.7f64, true),
-        ("seed7", "get_code_tree", now - 40, 200i32, 800i32, 10i32, 20i32, 500i32, 200i32, -300i32, -60.0f64, true),
     ];
     
     for (id, tool, ts, inp, out, elem, ms, base, lines, saved, pct, success) in &test_metrics {
@@ -1458,25 +1397,9 @@ fn export_graph(
         "json" => export_json(&elements, &relationships)?,
         "dot" => export_dot(&elements, &relationships),
         "mermaid" => export_mermaid(&relationships),
-        "html" => {
-            let exporter = graph::export::HtmlExporter::new();
-            exporter.generate_html(&elements, &relationships)
-        }
-        "svg" => {
-            let exporter = graph::export::SvgExporter::new();
-            exporter.generate_svg(&elements, &relationships)
-        }
-        "graphml" => {
-            let exporter = graph::export::GraphMlExporter::new();
-            exporter.generate_graphml(&elements, &relationships)
-        }
-        "neo4j" => {
-            let exporter = graph::export::Neo4jExporter::new();
-            exporter.generate_cypher(&elements, &relationships)
-        }
         _ => {
             return Err(
-                format!("Unknown format '{}'. Supported: json, dot, mermaid, html, svg, graphml, neo4j", format).into(),
+                format!("Unknown format '{}'. Supported: json, dot, mermaid", format).into(),
             )
         }
     };
@@ -1623,374 +1546,6 @@ fn run_shell_command(command: &[String], compress: bool) -> Result<(), Box<dyn s
         Err(e) => {
             eprintln!("{}", e);
             std::process::exit(1);
-        }
-    }
-
-    Ok(())
-}
-
-fn generate_wiki(output_path: &str, db_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    if !db_path.exists() {
-        return Err("LeanKG not initialized. Run 'leankg init' and 'leankg index' first.".into());
-    }
-
-    let db = db::schema::init_db(db_path)?;
-    let graph_engine = graph::GraphEngine::new(db);
-    let output = std::path::PathBuf::from(output_path);
-
-    println!("Generating wiki to {}...", output_path);
-
-    let generator = doc::WikiGenerator::new(&graph_engine, output);
-    let stats = generator.generate()?;
-
-    println!("Wiki generated successfully!");
-    println!("  Pages: {}", stats.pages_generated);
-    println!("  Elements documented: {}", stats.elements_documented);
-    println!("  Mermaid diagrams: {}", stats.mermaid_diagrams);
-
-    Ok(())
-}
-
-fn install_hooks(project_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    if !project_path.join(".git").exists() {
-        return Err("Not a git repository. Run 'leankg hooks install' from a git repository.".into());
-    }
-
-    let hooks = hooks::GitHooks::new(project_path.to_path_buf());
-    
-    println!("Installing LeanKG git hooks...");
-    
-    match hooks.install_pre_commit() {
-        Ok(_) => {}
-        Err(hooks::HookError::AlreadyInstalled(msg)) => {
-            println!("  Pre-commit: {}", msg);
-        }
-        Err(e) => {
-            eprintln!("  Pre-commit error: {}", e);
-        }
-    }
-    
-    match hooks.install_post_commit() {
-        Ok(_) => {}
-        Err(hooks::HookError::AlreadyInstalled(msg)) => {
-            println!("  Post-commit: {}", msg);
-        }
-        Err(e) => {
-            eprintln!("  Post-commit error: {}", e);
-        }
-    }
-    
-    match hooks.install_post_checkout() {
-        Ok(_) => {}
-        Err(hooks::HookError::AlreadyInstalled(msg)) => {
-            println!("  Post-checkout: {}", msg);
-        }
-        Err(e) => {
-            eprintln!("  Post-checkout error: {}", e);
-        }
-    }
-    
-    println!("\nLeanKG hooks installed successfully!");
-    println!("Hooks will:");
-    println!("  - Run leankg detect-changes on pre-commit");
-    println!("  - Run leankg index --incremental on post-commit");
-    println!("  - Run leankg index --incremental on post-checkout");
-    
-    Ok(())
-}
-
-fn uninstall_hooks(project_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    if !project_path.join(".git").exists() {
-        return Err("Not a git repository. Run 'leankg hooks uninstall' from a git repository.".into());
-    }
-
-    let hooks = hooks::GitHooks::new(project_path.to_path_buf());
-    hooks.uninstall_hooks()?;
-    
-    println!("LeanKG hooks uninstalled successfully!");
-    
-    Ok(())
-}
-
-fn check_hooks_status(project_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    if !project_path.join(".git").exists() {
-        return Err("Not a git repository. Run 'leankg hooks status' from a git repository.".into());
-    }
-
-    let hooks = hooks::GitHooks::new(project_path.to_path_buf());
-    let status = hooks.check_hooks_status()?;
-    
-    println!("LeanKG Git Hooks Status:");
-    println!();
-    println!("  Pre-commit:    {}", if status.pre_commit_installed { "Installed" } else { "Not installed" });
-    println!("  Post-commit:   {}", if status.post_commit_installed { "Installed" } else { "Not installed" });
-    println!("  Post-checkout: {}", if status.post_checkout_installed { "Installed" } else { "Not installed" });
-    println!();
-    
-    if status.pre_commit_backup_exists || status.post_commit_backup_exists || status.post_checkout_backup_exists {
-        println!("  Backups exist for restored hooks:");
-        if status.pre_commit_backup_exists { println!("    - pre-commit.leankg.backup"); }
-        if status.post_commit_backup_exists { println!("    - post-commit.leankg.backup"); }
-        if status.post_checkout_backup_exists { println!("    - post-checkout.leankg.backup"); }
-    }
-    
-    Ok(())
-}
-
-async fn watch_git_events(project_path: &std::path::Path, db_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    if !db_path.exists() {
-        eprintln!("LeanKG not initialized. Run 'leankg init' and 'leankg index' first.");
-        return Ok(());
-    }
-
-    let watcher = hooks::GitWatcher::new(
-        project_path.to_path_buf(),
-        db_path.to_path_buf(),
-    );
-
-    let status = watcher.check_index_status()?;
-    
-    println!("LeanKG Git Watcher");
-    println!("==================");
-    println!("  Project: {}", project_path.display());
-    println!("  DB:     {}", db_path.display());
-    println!("  Current commit: {}", &status.current_commit[..8]);
-    println!("  Last indexed:   {}", status.last_indexed_commit.as_ref().map(|c| &c[..8]).unwrap_or("never"));
-    println!("  Index status:   {}", if status.is_stale { "STALE - needs sync" } else { "Up to date" });
-    
-    if status.is_stale && !status.affected_files.is_empty() {
-        println!("\n  Changed files since last index:");
-        for file in status.affected_files.iter().take(10) {
-            println!("    - {}", file.display());
-        }
-        if status.affected_files.len() > 10 {
-            println!("    ... and {} more", status.affected_files.len() - 10);
-        }
-    }
-    
-    println!("\n  Press Ctrl+C to stop watching.");
-    println!("  Watching for git branch changes...\n");
-
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(10);
-    
-    let project_path_clone = project_path.to_path_buf();
-    let tx_clone = tx.clone();
-    
-    std::thread::spawn(move || {
-        loop {
-            let output = std::process::Command::new("git")
-                .args(["rev-parse", "--abbrev-ref", "HEAD"])
-                .current_dir(&project_path_clone)
-                .output();
-            
-            if let Ok(output) = output {
-                if output.status.success() {
-                    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    let _ = tx_clone.blocking_send(branch);
-                }
-            }
-            
-            std::thread::sleep(std::time::Duration::from_secs(2));
-        }
-    });
-
-    let mut last_branch = String::new();
-    loop {
-        tokio::select! {
-            biased;
-            
-            _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {
-                let new_watcher = hooks::GitWatcher::new(
-                    project_path.to_path_buf(),
-                    db_path.to_path_buf(),
-                );
-                if let Ok(status) = new_watcher.check_index_status() {
-                    if status.is_stale {
-                        println!("\n[LeanKG] Index is stale, syncing...");
-                        if let Err(e) = new_watcher.run_incremental_index() {
-                            eprintln!("  Sync failed: {}", e);
-                        } else {
-                            println!("  Sync complete!");
-                        }
-                    }
-                }
-            }
-            
-            branch = rx.recv() => {
-                if let Some(branch) = branch {
-                    if branch != last_branch {
-                        println!("\n[LeanKG] Branch changed: {}", branch);
-                        last_branch = branch.clone();
-                        
-                        let sync_watcher = hooks::GitWatcher::new(
-                            project_path.to_path_buf(),
-                            db_path.to_path_buf(),
-                        );
-                        if let Err(e) = sync_watcher.sync_on_branch_change(&branch) {
-                            eprintln!("  Sync failed: {}", e);
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-async fn update_leankg() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Checking for updates...");
-
-    let installed = get_installed_version()?;
-    let latest = get_latest_version().await?;
-
-    println!("Current: {}", installed);
-    println!("Latest:  {}", latest);
-
-    if installed == latest {
-        println!("\nYou already have the latest version ({}).", latest);
-        return Ok(());
-    }
-
-    println!("\nUpdating LeanKG...");
-
-    let platform = detect_platform();
-    let url = get_download_url(&platform, &latest);
-
-    println!("Downloading from {}...", url);
-
-    let tmp_dir = tempfile::tempdir()?;
-    let tar_path = tmp_dir.path().join("binary.tar.gz");
-
-    download_file(&url, &tar_path).await?;
-
-    extract_and_install(&tar_path).await?;
-
-    println!("\nSuccessfully updated to v{}", latest);
-    println!("Run 'leankg --version' to verify.");
-
-    Ok(())
-}
-
-fn get_installed_version() -> Result<String, Box<dyn std::error::Error>> {
-    let output = std::process::Command::new("leankg")
-        .arg("--version")
-        .output()?;
-
-    if !output.status.success() {
-        return Ok("not installed".to_string());
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let re = regex::Regex::new(r"(\d+\.\d+\.\d+)")?;
-    if let Some(caps) = re.captures(&stdout) {
-        Ok(caps.get(1).unwrap().as_str().to_string())
-    } else {
-        Ok("unknown".to_string())
-    }
-}
-
-async fn get_latest_version() -> Result<String, Box<dyn std::error::Error>> {
-    let client = reqwest::Client::new();
-    let resp = client
-        .get("https://api.github.com/repos/FreePeak/LeanKG/releases/latest")
-        .header("User-Agent", "LeanKG")
-        .header("Accept", "application/json")
-        .send()
-        .await?;
-
-    if !resp.status().is_success() {
-        return Err(format!("GitHub API returned status: {}", resp.status()).into());
-    }
-
-    let json: serde_json::Value = resp.json().await?;
-
-    let tag = json["tag_name"]
-        .as_str()
-        .ok_or("Failed to parse tag_name")?
-        .trim_start_matches('v')
-        .to_string();
-
-    Ok(tag)
-}
-
-fn detect_platform() -> String {
-    let os = std::process::Command::new("uname")
-        .arg("-s")
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
-
-    let arch = std::process::Command::new("uname")
-        .arg("-m")
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
-
-    let platform = match os.as_str() {
-        "Darwin" => "macos",
-        "Linux" => "linux",
-        _ => {
-            eprintln!("Unsupported platform: {}", os);
-            std::process::exit(1);
-        }
-    };
-
-    let arch = match arch.as_str() {
-        "x86_64" => "x64",
-        "arm64" | "aarch64" => "arm64",
-        _ => {
-            eprintln!("Unsupported architecture: {}", arch);
-            std::process::exit(1);
-        }
-    };
-
-    format!("{}-{}", platform, arch)
-}
-
-fn get_download_url(platform: &str, version: &str) -> String {
-    format!(
-        "https://github.com/FreePeak/LeanKG/releases/download/v{}/leankg-{}.tar.gz",
-        version, platform
-    )
-}
-
-async fn download_file(url: &str, dest: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    let resp = reqwest::get(url).await?;
-    let bytes = resp.bytes().await?;
-
-    std::fs::write(dest, bytes)?;
-    Ok(())
-}
-
-async fn extract_and_install(tar_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    let tmp_dir = tempfile::tempdir()?;
-    let extract_dir = tmp_dir.path();
-
-    let tar_gz = std::fs::File::open(tar_path)?;
-    let mut ar = tar::Archive::new(flate2::read::GzDecoder::new(tar_gz));
-    ar.unpack(extract_dir)?;
-
-    let install_dir = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".local/bin");
-    std::fs::create_dir_all(&install_dir)?;
-
-    let entries: Vec<_> = std::fs::read_dir(extract_dir)?
-        .filter_map(|e| e.ok())
-        .collect();
-
-    for entry in entries {
-        let path = entry.path();
-        if path.is_file() && path.file_name().map(|n| n == "leankg").unwrap_or(false) {
-            let dest = install_dir.join("leankg");
-            std::fs::copy(&path, &dest)?;
-
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let mut perms = std::fs::metadata(&path)?.permissions();
-                perms.set_mode(0o755);
-                std::fs::set_permissions(&dest, perms)?;
-            }
-
-            break;
         }
     }
 

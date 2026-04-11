@@ -9,7 +9,7 @@ use crate::mcp::watcher::start_watcher;
 use parking_lot::RwLock;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{CallToolRequestParams, CallToolResult, Content, ListToolsResult, Tool};
-use rmcp::service::{serve_directly, RoleServer};
+use rmcp::service::{serve_server, RoleServer};
 use rmcp::transport::stdio;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -21,8 +21,6 @@ pub struct MCPServer {
     graph_engine: Arc<parking_lot::Mutex<Option<GraphEngine>>>,
     watch_path: Option<PathBuf>,
     write_tracker: Arc<WriteTracker>,
-    /// Explicit project path from --project-path CLI flag (overrides auto-detection)
-    explicit_project_path: Option<PathBuf>,
 }
 
 impl std::fmt::Debug for MCPServer {
@@ -41,25 +39,11 @@ impl Clone for MCPServer {
             graph_engine: self.graph_engine.clone(),
             watch_path: self.watch_path.clone(),
             write_tracker: self.write_tracker.clone(),
-            explicit_project_path: self.explicit_project_path.clone(),
         }
     }
 }
 
 impl MCPServer {
-    fn normalize_db_path_for_init(path: &std::path::Path) -> std::path::PathBuf {
-        let is_db_dir = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(|n| n == ".leankg")
-            .unwrap_or(false);
-        if is_db_dir {
-            path.to_path_buf()
-        } else {
-            path.join(".leankg")
-        }
-    }
-
     pub fn new(db_path: std::path::PathBuf) -> Self {
         Self {
             auth_config: Arc::new(TokioRwLock::new(AuthConfig::default())),
@@ -67,7 +51,6 @@ impl MCPServer {
             graph_engine: Arc::new(parking_lot::Mutex::new(None)),
             watch_path: None,
             write_tracker: Arc::new(WriteTracker::new()),
-            explicit_project_path: None,
         }
     }
 
@@ -76,21 +59,8 @@ impl MCPServer {
             auth_config: Arc::new(TokioRwLock::new(AuthConfig::default())),
             db_path: Arc::new(RwLock::new(db_path)),
             graph_engine: Arc::new(parking_lot::Mutex::new(None)),
-            watch_path: Some(watch_path.clone()),
+            watch_path: Some(watch_path),
             write_tracker: Arc::new(WriteTracker::new()),
-            explicit_project_path: Some(watch_path),
-        }
-    }
-
-    /// Create with explicit project path (from --project-path CLI flag)
-    pub fn new_with_project_path(db_path: std::path::PathBuf, project_path: std::path::PathBuf) -> Self {
-        Self {
-            auth_config: Arc::new(TokioRwLock::new(AuthConfig::default())),
-            db_path: Arc::new(RwLock::new(db_path)),
-            graph_engine: Arc::new(parking_lot::Mutex::new(None)),
-            watch_path: None,
-            write_tracker: Arc::new(WriteTracker::new()),
-            explicit_project_path: Some(project_path),
         }
     }
 
@@ -137,28 +107,11 @@ impl MCPServer {
     }
 
     pub async fn serve_stdio(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // Retry auto-init up to once if it fails (handles case where .leankg exists but db doesn't)
-        match self.auto_init_if_needed().await {
-            Ok(_) => {}
-            Err(e) => {
-                tracing::warn!(
-                    "Initial auto-init failed: {}. Attempting recovery...",
-                    e
-                );
-                // Try one more time with fresh state
-                let project_root = self.find_project_root().unwrap_or_else(|_| std::path::PathBuf::from("."));
-                let leankg_path = project_root.join(".leankg");
-                if leankg_path.is_dir() {
-                    if let Err(retry_err) = self.run_full_init(project_root, leankg_path).await {
-                        tracing::error!(
-                            "Recovery failed: {}. Server may not function correctly.",
-                            retry_err
-                        );
-                    }
-                } else {
-                    tracing::warn!("Server will operate in uninitialized state.");
-                }
-            }
+        if let Err(e) = self.auto_init_if_needed().await {
+            tracing::warn!(
+                "Auto-init skipped: {}. Server will operate in uninitialized state.",
+                e
+            );
         }
 
         if let Some(ref watch_path) = self.watch_path {
@@ -178,10 +131,7 @@ impl MCPServer {
             );
         }
         let transport = stdio();
-        // Use serve_directly to skip MCP initialization handshake requirements.
-        // This allows LeanKG to accept requests without requiring the client to send
-        // 'notifications/initialized' after the initialize response.
-        let _running = serve_directly(self.clone(), transport, None);
+        let _running = serve_server(self.clone(), transport).await?;
         futures_util::future::pending().await
     }
 
@@ -194,15 +144,6 @@ impl MCPServer {
 
         if leankg_dir_exists || leankg_yaml_exists {
             if leankg_dir_exists {
-                // Check if database actually exists - if not, we need to initialize
-                let db_file = leankg_path.join("leankg.db");
-                if !db_file.exists() {
-                    tracing::info!(
-                        "LeanKG .leankg directory exists but database not created, running full initialization for {}",
-                        project_root.display()
-                    );
-                    return self.run_full_init(project_root, leankg_path).await;
-                }
                 tracing::info!(
                     "LeanKG project already initialized at {}",
                     project_root.display()
@@ -296,72 +237,6 @@ impl MCPServer {
         Ok(())
     }
 
-    async fn run_full_init(&self, project_root: std::path::PathBuf, leankg_path: std::path::PathBuf) -> Result<(), String> {
-        // Ensure .leankg/leankg.yaml exists (will use defaults if not)
-        let config_path = project_root.join(".leankg/leankg.yaml");
-        if !config_path.exists() {
-            let config = crate::config::ProjectConfig::default();
-            let config_yaml = serde_yaml::to_string(&config)
-                .map_err(|e| format!("Failed to serialize config: {}", e))?;
-            std::fs::write(&config_path, config_yaml)
-                .map_err(|e| format!("Failed to write config: {}", e))?;
-        }
-
-        let db_path = leankg_path.clone();
-        tokio::fs::create_dir_all(&db_path)
-            .await
-            .map_err(|e| format!("Failed to create db path: {}", e))?;
-
-        let db = init_db(&db_path).map_err(|e| format!("Database error: {}", e))?;
-        let graph_engine = crate::graph::GraphEngine::new(db);
-        let mut parser_manager = crate::indexer::ParserManager::new();
-        parser_manager
-            .init_parsers()
-            .map_err(|e| format!("Parser init error: {}", e))?;
-
-        let root_str = project_root.to_string_lossy().to_string();
-        let files = crate::indexer::find_files_sync(&root_str)
-            .map_err(|e| format!("Find files error: {}", e))?;
-        let mut indexed = 0;
-
-        for file_path in &files {
-            if crate::indexer::index_file_sync(&graph_engine, &mut parser_manager, file_path)
-                .is_ok()
-            {
-                indexed += 1;
-            }
-        }
-
-        tracing::info!("Run-full-init: Indexed {} files", indexed);
-
-        if let Err(e) = graph_engine.resolve_call_edges() {
-            tracing::warn!("Run-full-init: Failed to resolve call edges: {}", e);
-        }
-
-        if let Ok(true) = project_root.join("docs").try_exists() {
-            if let Ok(doc_result) = crate::doc_indexer::index_docs_directory(
-                project_root.join("docs").as_path(),
-                &graph_engine,
-            ) {
-                tracing::info!(
-                    "Run-full-init: Indexed {} documents",
-                    doc_result.documents.len()
-                );
-            }
-        }
-
-        // Store the initialized graph engine and db path in server state
-        {
-            let mut db_path_guard = parking_lot::RwLock::write(&self.db_path);
-            *db_path_guard = db_path.clone();
-        }
-        let mut ge_guard = self.graph_engine.lock();
-        *ge_guard = Some(graph_engine);
-
-        tracing::info!("Run-full-init complete");
-        Ok(())
-    }
-
     async fn auto_index_if_needed(&self) -> Result<(), String> {
         let project_root = self.find_project_root()?;
         let config_path = project_root.join(".leankg/leankg.yaml");
@@ -383,10 +258,9 @@ impl MCPServer {
         let db_path = self.get_db_path();
         let db_file = db_path.join("leankg.db");
 
-        // If database doesn't exist, trigger full initialization (not just index)
         if !db_file.exists() {
-            tracing::info!("Database file does not exist, triggering full initialization");
-            return Err("Database not initialized, need full init".to_string());
+            tracing::info!("Database file does not exist, skipping auto-index");
+            return Ok(());
         }
 
         if !crate::indexer::GitAnalyzer::is_git_repo() {
@@ -531,19 +405,6 @@ impl MCPServer {
     }
 
     fn find_project_root(&self) -> Result<std::path::PathBuf, String> {
-        // 1. Check CURSOR_PROJECT_DIR env var (auto-injected by Cursor when launching MCP server)
-        if let Ok(cursor_project) = std::env::var("CURSOR_PROJECT_DIR") {
-            let path = std::path::PathBuf::from(&cursor_project);
-            tracing::debug!("Using CURSOR_PROJECT_DIR: {}", cursor_project);
-            return Ok(path);
-        }
-
-        // 2. Use explicit project path if provided via --project-path CLI flag
-        if let Some(ref explicit) = self.explicit_project_path {
-            tracing::debug!("Using explicit project path: {}", explicit.display());
-            return Ok(explicit.clone());
-        }
-
         let current_dir =
             std::env::current_dir().map_err(|e| format!("Failed to get current dir: {}", e))?;
 
@@ -606,7 +467,7 @@ impl MCPServer {
 
         if tool_name == "mcp_init" {
             if let Some(path) = arguments.get("path").and_then(|v| v.as_str()) {
-                let new_db_path = Self::normalize_db_path_for_init(std::path::Path::new(path));
+                let new_db_path = std::path::PathBuf::from(path);
                 {
                     let mut guard = self.graph_engine.lock();
                     *guard = None;
@@ -639,24 +500,6 @@ impl MCPServer {
         }
 
         result
-    }
-}
-
-#[cfg(test)]
-mod path_tests {
-    use super::MCPServer;
-    use std::path::Path;
-
-    #[test]
-    fn normalize_db_path_for_project_path_appends_leankg() {
-        let normalized = MCPServer::normalize_db_path_for_init(Path::new("/tmp/project-root"));
-        assert_eq!(normalized, std::path::PathBuf::from("/tmp/project-root/.leankg"));
-    }
-
-    #[test]
-    fn normalize_db_path_for_db_path_keeps_value() {
-        let normalized = MCPServer::normalize_db_path_for_init(Path::new("/tmp/project-root/.leankg"));
-        assert_eq!(normalized, std::path::PathBuf::from("/tmp/project-root/.leankg"));
     }
 }
 

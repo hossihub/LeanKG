@@ -14,32 +14,9 @@ pub fn init_db(db_path: &Path) -> Result<CozoDb, Box<dyn std::error::Error>> {
 
     let db = cozo::new_cozo_sqlite(path_str)?;
 
-    configure_sqlite_concurrency(&db)?;
-
     init_schema(&db)?;
 
     Ok(db)
-}
-
-fn configure_sqlite_concurrency(db: &CozoDb) -> Result<(), Box<dyn std::error::Error>> {
-    let pragmas = [
-        ("journal_mode", "wal"),
-        ("busy_timeout", "5000"),
-        ("synchronous", "normal"),
-        ("wal_autocheckpoint", "1000"),
-        ("cache_size", "-64000"),
-    ];
-
-    for (name, value) in pragmas {
-        let pragma_query = format!("PRAGMA {} = {}", name, value);
-        if let Err(e) = db.run_script(&pragma_query, Default::default()) {
-            tracing::debug!("Failed to set PRAGMA {}: {:?}", name, e);
-        }
-    }
-
-    tracing::info!("SQLite concurrency pragmas configured (WAL mode, busy_timeout=5000ms)");
-
-    Ok(())
 }
 
 fn init_schema(db: &CozoDb) -> Result<(), Box<dyn std::error::Error>> {

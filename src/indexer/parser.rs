@@ -8,13 +8,6 @@ pub struct ParserManager {
     pub rust_parser: Parser,
     pub java_parser: Parser,
     pub kotlin_parser: Parser,
-    pub cpp_parser: Parser,
-    pub c_sharp_parser: Parser,
-    pub ruby_parser: Parser,
-    pub php_parser: Parser,
-    pub xml_parser: Parser,
-    pub dart_parser: Parser,
-    pub swift_parser: Parser,
 }
 
 impl ParserManager {
@@ -26,13 +19,6 @@ impl ParserManager {
             rust_parser: Parser::new(),
             java_parser: Parser::new(),
             kotlin_parser: Parser::new(),
-            cpp_parser: Parser::new(),
-            c_sharp_parser: Parser::new(),
-            ruby_parser: Parser::new(),
-            php_parser: Parser::new(),
-            xml_parser: Parser::new(),
-            dart_parser: Parser::new(),
-            swift_parser: Parser::new(),
         }
     }
 
@@ -43,13 +29,6 @@ impl ParserManager {
         let rust_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
         let java_lang: tree_sitter::Language = tree_sitter_java::LANGUAGE.into();
         let kotlin_lang: tree_sitter::Language = tree_sitter_kotlin_ng::LANGUAGE.into();
-        let cpp_lang: tree_sitter::Language = tree_sitter_cpp::LANGUAGE.into();
-        let c_sharp_lang: tree_sitter::Language = tree_sitter_c_sharp::LANGUAGE.into();
-        let ruby_lang: tree_sitter::Language = tree_sitter_ruby::LANGUAGE.into();
-        let php_lang: tree_sitter::Language = tree_sitter_php::LANGUAGE_PHP.into();
-        let xml_lang: tree_sitter::Language = tree_sitter_xml::LANGUAGE_XML.into();
-        let dart_lang: tree_sitter::Language = tree_sitter_dart::LANGUAGE.into();
-        let swift_lang: tree_sitter::Language = tree_sitter_swift::LANGUAGE.into();
 
         self.go_parser.set_language(&go_lang)?;
         self.ts_parser.set_language(&ts_lang)?;
@@ -57,13 +36,6 @@ impl ParserManager {
         self.rust_parser.set_language(&rust_lang)?;
         self.java_parser.set_language(&java_lang)?;
         self.kotlin_parser.set_language(&kotlin_lang)?;
-        self.cpp_parser.set_language(&cpp_lang)?;
-        self.c_sharp_parser.set_language(&c_sharp_lang)?;
-        self.ruby_parser.set_language(&ruby_lang)?;
-        self.php_parser.set_language(&php_lang)?;
-        self.xml_parser.set_language(&xml_lang)?;
-        self.dart_parser.set_language(&dart_lang)?;
-        self.swift_parser.set_language(&swift_lang)?;
 
         Ok(())
     }
@@ -75,14 +47,7 @@ impl ParserManager {
             "python" => Some(&mut self.python_parser),
             "rust" => Some(&mut self.rust_parser),
             "java" => Some(&mut self.java_parser),
-            "kotlin" | "kts" => Some(&mut self.kotlin_parser),
-            "cpp" | "c" | "cc" | "cxx" | "h" | "hpp" => Some(&mut self.cpp_parser),
-            "csharp" | "cs" => Some(&mut self.c_sharp_parser),
-            "ruby" | "rb" => Some(&mut self.ruby_parser),
-            "php" => Some(&mut self.php_parser),
-            "xml" => Some(&mut self.xml_parser),
-            "dart" => Some(&mut self.dart_parser),
-            "swift" => Some(&mut self.swift_parser),
+            "kotlin" => Some(&mut self.kotlin_parser),
             _ => None,
         }
     }
@@ -147,37 +112,6 @@ mod tests {
     }
 
     #[test]
-    fn test_get_parser_for_cpp() {
-        if let Some(mut pm) = init_parsers_if_compatible() {
-            assert!(pm.get_parser_for_language("cpp").is_some());
-            assert!(pm.get_parser_for_language("c").is_some());
-        }
-    }
-
-    #[test]
-    fn test_get_parser_for_csharp() {
-        if let Some(mut pm) = init_parsers_if_compatible() {
-            assert!(pm.get_parser_for_language("cs").is_some());
-            assert!(pm.get_parser_for_language("csharp").is_some());
-        }
-    }
-
-    #[test]
-    fn test_get_parser_for_ruby() {
-        if let Some(mut pm) = init_parsers_if_compatible() {
-            assert!(pm.get_parser_for_language("rb").is_some());
-            assert!(pm.get_parser_for_language("ruby").is_some());
-        }
-    }
-
-    #[test]
-    fn test_get_parser_for_php() {
-        if let Some(mut pm) = init_parsers_if_compatible() {
-            assert!(pm.get_parser_for_language("php").is_some());
-        }
-    }
-
-    #[test]
     fn test_get_parser_for_unknown_returns_none() {
         let mut pm = ParserManager::new();
         assert!(pm.get_parser_for_language("unknown").is_none());
@@ -213,78 +147,5 @@ mod tests {
             assert!(tree.is_some());
         }
     }
-
-    #[test]
-    fn test_parser_parse_cpp_code() {
-        if let Some(mut pm) = init_parsers_if_compatible() {
-            let source = b"int main() { return 0; }";
-            let parser = pm.get_parser_for_language("cpp").unwrap();
-            let tree = parser.parse(source, None);
-            assert!(tree.is_some());
-        }
-    }
-
-    #[test]
-    fn test_parser_parse_csharp_code() {
-        if let Some(mut pm) = init_parsers_if_compatible() {
-            let source = b"class Program { static void Main() {} }";
-            let parser = pm.get_parser_for_language("csharp").unwrap();
-            let tree = parser.parse(source, None);
-            assert!(tree.is_some());
-        }
-    }
-
-    #[test]
-    fn test_parser_parse_ruby_code() {
-        if let Some(mut pm) = init_parsers_if_compatible() {
-            let source = b"def setup\n puts 'hello'\nend";
-            let parser = pm.get_parser_for_language("ruby").unwrap();
-            let tree = parser.parse(source, None);
-            assert!(tree.is_some());
-        }
-    }
-
-    #[test]
-    fn test_parser_parse_php_code() {
-        if let Some(mut pm) = init_parsers_if_compatible() {
-            let source = b"<?php echo 'Hello World'; ?>";
-            let parser = pm.get_parser_for_language("php").unwrap();
-            let tree = parser.parse(source, None);
-            assert!(tree.is_some());
-        }
-    }
-
-    #[test]
-    fn test_get_parser_for_dart() {
-        if let Some(mut pm) = init_parsers_if_compatible() {
-            assert!(pm.get_parser_for_language("dart").is_some());
-        }
-    }
-
-    #[test]
-    fn test_get_parser_for_swift() {
-        if let Some(mut pm) = init_parsers_if_compatible() {
-            assert!(pm.get_parser_for_language("swift").is_some());
-        }
-    }
-
-    #[test]
-    fn test_parser_parse_dart_code() {
-        if let Some(mut pm) = init_parsers_if_compatible() {
-            let source = b"void main() { print('Hello'); }";
-            let parser = pm.get_parser_for_language("dart").unwrap();
-            let tree = parser.parse(source, None);
-            assert!(tree.is_some());
-        }
-    }
-
-    #[test]
-    fn test_parser_parse_swift_code() {
-        if let Some(mut pm) = init_parsers_if_compatible() {
-            let source = b"func main() { print(\"Hello\") }";
-            let parser = pm.get_parser_for_language("swift").unwrap();
-            let tree = parser.parse(source, None);
-            assert!(tree.is_some());
-        }
-    }
 }
+

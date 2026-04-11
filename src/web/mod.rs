@@ -7,6 +7,7 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
+use tower_http::services::{ServeDir, ServeFile};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -177,20 +178,18 @@ pub async fn start_server(
     port: u16,
     db_path: std::path::PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let state = AppState::new(db_path.clone(), db_path).await?;
+    // db_path points to .leankg directory; project root is its parent
+    let project_root = db_path.parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| db_path.clone());
+    let state = AppState::new(db_path, project_root).await?;
     state.init_db().await?;
 
+    let serve_dir = ServeDir::new("ui/dist")
+        .not_found_service(ServeFile::new("ui/dist/index.html"));
+
     let app = Router::new()
-        .route("/", get(handlers::index))
-        .route("/health", get(handlers::index))
-        .route("/project", get(handlers::project_selector))
-        .route("/graph", get(handlers::graph))
-        .route("/browse", get(handlers::browse))
-        .route("/docs", get(handlers::docs))
-        .route("/annotate", get(handlers::annotate))
-        .route("/quality", get(handlers::quality))
-        .route("/export", get(handlers::export_page))
-        .route("/settings", get(handlers::settings))
+        .fallback_service(serve_dir)
         .route("/api/elements", get(handlers::api_elements))
         .route("/api/relationships", get(handlers::api_relationships))
         .route("/api/annotations", get(handlers::api_annotations))
@@ -210,6 +209,7 @@ pub async fn start_server(
         .route("/api/project/switch", post(handlers::api_switch_path))
         .route("/api/index/status", get(handlers::api_index_status))
         .route("/api/github/clone", post(handlers::api_github_clone))
+        .route("/api/file", get(handlers::api_get_file))
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));

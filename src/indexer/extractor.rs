@@ -36,23 +36,6 @@ pub fn is_test_file(file_path: &str) -> bool {
                 || file_name.ends_with("Test.kts")
                 || path.components().any(|c| c.as_os_str() == "test")
         }
-        "cpp" | "cc" | "cxx" => {
-            file_name.ends_with("_test.cpp")
-                || file_name.starts_with("test_")
-                || file_name.ends_with("Test.cpp")
-        }
-        "cs" => file_name.ends_with("Test.cs") || file_name.ends_with("Tests.cs"),
-        "php" => file_name.ends_with("Test.php") || file_name.ends_with("Tests.php"),
-        "dart" => {
-            file_name.ends_with("_test.dart")
-                || file_name.ends_with("_dart_test.dart")
-                || path.components().any(|c| c.as_os_str() == "test")
-        }
-        "swift" => {
-            file_name.ends_with("Tests.swift")
-                || file_name.ends_with("_tests.swift")
-                || path.components().any(|c| c.as_os_str() == "Tests")
-        }
         _ => false,
     }
 }
@@ -112,16 +95,6 @@ pub fn is_noise_call(name: &str) -> bool {
             | "TODO" | "lazy"
             // Android logger mappings
             | "v" | "d" | "i" | "w" | "e" | "wtf"
-            // C++ / C# / PHP standard lib concepts
-            | "Console.WriteLine" | "Console.Write"
-            | "std::cout" | "printf" | "echo" | "print_r" | "var_dump"
-            // Dart stdlib
-            | "main"
-            | "List" | "Map" | "Set" | "Future" | "Stream"
-            // Swift stdlib
-            | "fatalError" | "precondition"
-            | "Int" | "Double" | "Bool" | "Array" | "Dictionary" | "Set"
-            | "guard" | "defer" | "switch" | "case"
     ) || name.len() < 2
 }
 
@@ -186,53 +159,6 @@ pub fn get_tested_file_path(file_path: &str) -> Option<String> {
                 Some(file_name.trim_end_matches("Tests.kt").to_string() + ".kt")
             } else if file_name.ends_with("Test.kts") {
                 Some(file_name.trim_end_matches("Test.kts").to_string() + ".kts")
-            } else {
-                None
-            }
-        }
-        "cpp" | "cc" | "cxx" => {
-            if file_name.ends_with("_test.cpp") {
-                Some(file_name.trim_end_matches("_test.cpp").to_string() + ".cpp")
-            } else if file_name.ends_with("Test.cpp") {
-                Some(file_name.trim_end_matches("Test.cpp").to_string() + ".cpp")
-            } else if file_name.starts_with("test_") {
-                Some(file_name.strip_prefix("test_").unwrap().to_string())
-            } else {
-                None
-            }
-        }
-        "cs" => {
-            if file_name.ends_with("Test.cs") {
-                Some(file_name.trim_end_matches("Test.cs").to_string() + ".cs")
-            } else if file_name.ends_with("Tests.cs") {
-                Some(file_name.trim_end_matches("Tests.cs").to_string() + ".cs")
-            } else {
-                None
-            }
-        }
-        "php" => {
-            if file_name.ends_with("Test.php") {
-                Some(file_name.trim_end_matches("Test.php").to_string() + ".php")
-            } else if file_name.ends_with("Tests.php") {
-                Some(file_name.trim_end_matches("Tests.php").to_string() + ".php")
-            } else {
-                None
-            }
-        }
-        "dart" => {
-            if file_name.ends_with("_test.dart") {
-                Some(file_name.trim_end_matches("_test.dart").to_string() + ".dart")
-            } else if file_name.ends_with("_dart_test.dart") {
-                Some(file_name.trim_end_matches("_dart_test.dart").to_string() + ".dart")
-            } else {
-                None
-            }
-        }
-        "swift" => {
-            if file_name.ends_with("Tests.swift") {
-                Some(file_name.trim_end_matches("Tests.swift").to_string() + ".swift")
-            } else if file_name.ends_with("_tests.swift") {
-                Some(file_name.trim_end_matches("_tests.swift").to_string() + ".swift")
             } else {
                 None
             }
@@ -327,7 +253,7 @@ impl<'a> EntityExtractor<'a> {
         elements: &mut Vec<CodeElement>,
         relationships: &mut Vec<Relationship>,
     ) {
-        let node_type = node.kind();
+        let node_type = node.kind(); 
 
         match node_type {
             "function_declaration"
@@ -338,20 +264,12 @@ impl<'a> EntityExtractor<'a> {
             | "method_definition"
             | "constructor_declaration"
             | "secondary_constructor" => {
-                self.extract_function(node, parent, elements);
+                self.extract_function(node, parent, elements, relationships);
             }
-            "class_declaration"
-            | "type_declaration"
-            | "class_def"
-            | "struct_item"
-            | "class_definition"
-            | "enum_declaration"
-            | "record_declaration"
-            | "object_declaration"
-            | "companion_object"
-            | "struct_specifier"
-            | "namespace_definition" => {
-                self.extract_class(node, parent, elements);
+            "class_declaration" | "type_declaration" | "class_def" | "struct_item"
+            | "class_definition" | "enum_declaration" | "record_declaration"
+            | "object_declaration" | "companion_object" => {
+                self.extract_class(node, parent, elements, relationships);
             }
             "decorated_definition" => {
                 self.extract_decorated_definition(node, parent, elements, relationships);
@@ -360,7 +278,10 @@ impl<'a> EntityExtractor<'a> {
                 self.extract_type_spec(node, parent, elements, relationships);
             }
             "interface_declaration" | "protocol_declaration" => {
-                self.extract_interface(node, parent, elements);
+                self.extract_interface(node, parent, elements, relationships);
+            }
+            "property_declaration" | "field_declaration" | "public_field_definition" => {
+                self.extract_property(node, parent, elements, relationships);
             }
             "import_declaration"
             | "import_specifier"
@@ -409,8 +330,6 @@ impl<'a> EntityExtractor<'a> {
                         | "secondary_constructor"
                         | "object_declaration"
                         | "companion_object"
-                        | "struct_specifier"
-                        | "namespace_definition"
                         | "interface_declaration"
                 ) {
                     self.get_node_name(node)
@@ -422,23 +341,28 @@ impl<'a> EntityExtractor<'a> {
         }
     }
 
-    fn extract_function(&self, node: Node, parent: Option<&str>, elements: &mut Vec<CodeElement>) {
-        // For Java constructor_declaration or Kotlin secondary_constructor, the name comes from the class (first identifier)
-        let name =
-            if node.kind() == "constructor_declaration" || node.kind() == "secondary_constructor" {
-                self.get_node_name(node).or_else(|| {
-                    // Fallback: use parent name if available
-                    parent.map(String::from)
-                })
-            } else {
-                self.get_node_name(node)
-            };
+    fn extract_function(&self, node: Node, parent: Option<&str>, elements: &mut Vec<CodeElement>, relationships: &mut Vec<Relationship>) {
+        let is_constructor = matches!(node.kind(), "constructor_declaration" | "secondary_constructor");
+        let name = if is_constructor {
+            self.get_node_name(node).or_else(|| parent.map(String::from))
+        } else {
+            self.get_node_name(node)
+        };
+        
+        let element_type = if is_constructor || name.as_deref() == Some("__init__") || name.as_deref() == Some("constructor") {
+            "constructor"
+        } else if parent.is_some() {
+            "method"
+        } else {
+            "function"
+        };
+
         if let Some(name) = name {
             let qualified_name = format!("{}::{}", self.file_path, name);
             let (signature, sig_end) = self.extract_function_signature(node);
             elements.push(CodeElement {
                 qualified_name: qualified_name.clone(),
-                element_type: "function".to_string(),
+                element_type: element_type.to_string(),
                 name,
                 file_path: self.file_path.to_string(),
                 line_start: node.start_position().row as u32 + 1,
@@ -451,15 +375,131 @@ impl<'a> EntityExtractor<'a> {
                 }),
                 ..Default::default()
             });
+
+            if let Some(p) = parent {
+                let p_qualified = format!("{}::{}", self.file_path, p);
+                relationships.push(Relationship {
+                    id: None,
+                    source_qualified: p_qualified,
+                    target_qualified: qualified_name.clone(),
+                    rel_type: "contains".to_string(),
+                    confidence: 1.0,
+                    metadata: serde_json::json!({}),
+                });
+
+                if element_type == "constructor" {
+                    self.extract_constructor_fields(node, p, elements, relationships);
+                }
+            } else {
+                relationships.push(Relationship {
+                    id: None,
+                    source_qualified: self.file_path.to_string(),
+                    target_qualified: qualified_name.clone(),
+                    rel_type: "contains".to_string(),
+                    confidence: 1.0,
+                    metadata: serde_json::json!({}),
+                });
+            }
         }
     }
 
-    fn extract_class(&self, node: Node, parent: Option<&str>, elements: &mut Vec<CodeElement>) {
+    fn extract_constructor_fields(&self, node: Node, class_name: &str, elements: &mut Vec<CodeElement>, relationships: &mut Vec<Relationship>) {
+        let mut stack = vec![node];
+        while let Some(current) = stack.pop() {
+            let kind = current.kind();
+
+            if kind == "assignment_expression" || kind == "assignment_statement" || kind == "assignment" {
+                if let Some(left) = current.child_by_field_name("left") {
+                    self.process_assignment_target(left, class_name, elements, relationships);
+                }
+            } else if kind == "expression_statement" {
+                let mut cursor = current.walk();
+                for child in current.children(&mut cursor) {
+                    if child.kind() == "assignment_expression" {
+                        if let Some(left) = child.child_by_field_name("left") {
+                            self.process_assignment_target(left, class_name, elements, relationships);
+                        }
+                    }
+                }
+            }
+
+            let mut cursor = current.walk();
+            for child in current.children(&mut cursor) {
+                if child.child_count() > 0 {
+                    stack.push(child);
+                }
+            }
+        }
+    }
+
+    fn process_assignment_target(&self, left_node: Node, class_name: &str, elements: &mut Vec<CodeElement>, relationships: &mut Vec<Relationship>) {
+        let kind = left_node.kind();
+        if kind == "member_expression" || kind == "attribute" || kind == "field_expression" || kind == "selector_expression" {
+            let mut cursor = left_node.walk();
+            let mut is_self = false;
+            let mut field_name = None;
+
+            for child in left_node.children(&mut cursor) {
+                if let Some(bytes) = self.source.get(child.byte_range()) {
+                    if let Ok(text) = std::str::from_utf8(bytes) {
+                        let inner_kind = child.kind();
+                        if inner_kind == "identifier" || inner_kind == "this" || inner_kind == "self" {
+                            if text == "this" || text == "self" || text == "cls" {
+                                is_self = true;
+                            }
+                        } else if inner_kind == "property_identifier" || inner_kind == "field_identifier" || inner_kind == "identifier" {
+                            field_name = Some(text.to_string());
+                        }
+                    }
+                }
+            }
+
+            if is_self {
+                if let Some(f_name) = field_name {
+                    let qualified_name = format!("{}::{}::{}", self.file_path, class_name, f_name);
+                    
+                    let already_exists = elements.iter().any(|e| e.qualified_name == qualified_name);
+                    
+                    if !already_exists {
+                        elements.push(CodeElement {
+                            qualified_name: qualified_name.clone(),
+                            element_type: "property".to_string(),
+                            name: f_name.clone(),
+                            file_path: self.file_path.to_string(),
+                            line_start: left_node.start_position().row as u32 + 1,
+                            line_end: left_node.end_position().row as u32 + 1,
+                            language: self.language.to_string(),
+                            parent_qualified: Some(class_name.to_string()),
+                            metadata: serde_json::json!({"inferred_from_constructor": true}),
+                            ..Default::default()
+                        });
+
+                        relationships.push(Relationship {
+                            id: None,
+                            source_qualified: format!("{}::{}", self.file_path, class_name),
+                            target_qualified: qualified_name,
+                            rel_type: "has_property".to_string(),
+                            confidence: 1.0,
+                            metadata: serde_json::json!({}),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    fn extract_property(
+        &self,
+        node: Node,
+        parent: Option<&str>,
+        elements: &mut Vec<CodeElement>,
+        relationships: &mut Vec<Relationship>,
+    ) {
         if let Some(name) = self.get_node_name(node) {
             let qualified_name = format!("{}::{}", self.file_path, name);
             elements.push(CodeElement {
                 qualified_name: qualified_name.clone(),
-                element_type: "class".to_string(),
+                element_type: "property".to_string(),
                 name,
                 file_path: self.file_path.to_string(),
                 line_start: node.start_position().row as u32 + 1,
@@ -469,6 +509,99 @@ impl<'a> EntityExtractor<'a> {
                 metadata: serde_json::json!({}),
                 ..Default::default()
             });
+
+            if let Some(p) = parent {
+                relationships.push(Relationship {
+                    id: None,
+                    source_qualified: format!("{}::{}", self.file_path, p),
+                    target_qualified: qualified_name.clone(),
+                    rel_type: "has_property".to_string(),
+                    confidence: 1.0,
+                    metadata: serde_json::json!({}),
+                });
+            }
+        }
+    }
+
+    fn extract_class(&self, node: Node, parent: Option<&str>, elements: &mut Vec<CodeElement>, relationships: &mut Vec<Relationship>) { 
+        if let Some(name) = self.get_node_name(node) {
+            let element_type = if node.kind() == "enum_declaration" {
+                "enum"
+            } else if node.kind() == "record_declaration" {
+                "record"
+            } else {
+                "class"
+            };
+
+            let qualified_name = format!("{}::{}", self.file_path, name);
+
+            if let Some(p) = parent {
+                relationships.push(Relationship {
+                    id: None,
+                    source_qualified: format!("{}::{}", self.file_path, p),
+                    target_qualified: qualified_name.clone(),
+                    rel_type: "contains".to_string(),
+                    confidence: 1.0,
+                    metadata: serde_json::json!({}),
+                });
+            } else {
+                relationships.push(Relationship {
+                    id: None,
+                    source_qualified: self.file_path.to_string(),
+                    target_qualified: qualified_name.clone(),
+                    rel_type: "contains".to_string(),
+                    confidence: 1.0,
+                    metadata: serde_json::json!({}),
+                });
+            }
+
+            elements.push(CodeElement {
+                qualified_name: qualified_name.clone(),
+                element_type: element_type.to_string(),
+                name,
+                file_path: self.file_path.to_string(),
+                line_start: node.start_position().row as u32 + 1,
+                line_end: node.end_position().row as u32 + 1,
+                language: self.language.to_string(),
+                parent_qualified: parent.map(String::from),
+                metadata: serde_json::json!({}),
+                ..Default::default()
+            });
+
+            self.extract_class_heritage(node, &qualified_name, relationships);
+        }
+    }
+
+    fn extract_class_heritage(&self, node: Node, class_qualified: &str, relationships: &mut Vec<Relationship>) {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            let kind = child.kind();
+            if kind == "class_heritage" || kind == "superclass" || kind == "super_interfaces" || kind == "extends_clause" || kind == "implements_clause" || kind == "argument_list" {
+                self.extract_heritage_types(child, class_qualified, kind == "implements_clause" || kind == "super_interfaces", relationships);
+            }
+        }
+    }
+
+    fn extract_heritage_types(&self, node: Node, source_qualified: &str, is_implements: bool, relationships: &mut Vec<Relationship>) {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            let kind = child.kind();
+            if kind == "identifier" || kind == "type_identifier" {
+                if let Some(bytes) = self.source.get(child.byte_range()) {
+                    if let Ok(target_name) = std::str::from_utf8(bytes) {
+                        relationships.push(Relationship {
+                            id: None,
+                            source_qualified: source_qualified.to_string(),
+                            target_qualified: format!("__unresolved__{}", target_name),
+                            rel_type: if is_implements { "implements".to_string() } else { "extends".to_string() },
+                            confidence: 0.8,
+                            metadata: serde_json::json!({ "heritage_name": target_name }),
+                        });
+                    }
+                }
+            } else {
+                self.extract_heritage_types(child, source_qualified, kind == "implements_clause" || is_implements, relationships);
+            }
         }
     }
 
@@ -568,9 +701,29 @@ impl<'a> EntityExtractor<'a> {
         }
     }
 
-    fn extract_interface(&self, node: Node, parent: Option<&str>, elements: &mut Vec<CodeElement>) {
+    fn extract_interface(&self, node: Node, parent: Option<&str>, elements: &mut Vec<CodeElement>, relationships: &mut Vec<Relationship>) {
         if let Some(name) = self.get_node_name(node) {
             let qualified_name = format!("{}::{}", self.file_path, name);
+            if let Some(p) = parent {
+                relationships.push(Relationship {
+                    id: None,
+                    source_qualified: format!("{}::{}", self.file_path, p),
+                    target_qualified: qualified_name.clone(),
+                    rel_type: "contains".to_string(),
+                    confidence: 1.0,
+                    metadata: serde_json::json!({}),
+                });
+            } else {
+                relationships.push(Relationship {
+                    id: None,
+                    source_qualified: self.file_path.to_string(),
+                    target_qualified: qualified_name.clone(),
+                    rel_type: "contains".to_string(),
+                    confidence: 1.0,
+                    metadata: serde_json::json!({}),
+                });
+            }
+
             elements.push(CodeElement {
                 qualified_name: qualified_name.clone(),
                 element_type: "interface".to_string(),
@@ -583,6 +736,8 @@ impl<'a> EntityExtractor<'a> {
                 metadata: serde_json::json!({}),
                 ..Default::default()
             });
+            
+            self.extract_class_heritage(node, &qualified_name, relationships);
         }
     }
 
@@ -669,7 +824,7 @@ impl<'a> EntityExtractor<'a> {
                     self.extract_decorator(child, parent, elements);
                 }
                 "function_definition" | "function_declaration" => {
-                    self.extract_function(child, parent, elements);
+                    self.extract_function(child, parent, elements, _relationships);
                 }
                 _ => {}
             }
@@ -808,7 +963,7 @@ impl<'a> EntityExtractor<'a> {
     }
 
     fn get_node_name(&self, node: Node) -> Option<String> {
-        let node_type = node.kind();
+        let node_type = node.kind(); 
 
         if node_type == "type_spec" {
             if let Some(name_node) = node.child_by_field_name("name") {
@@ -839,13 +994,30 @@ impl<'a> EntityExtractor<'a> {
                 | "record_declaration"
                 | "object_declaration"
                 | "companion_object"
-                | "struct_specifier"
-                | "namespace_definition"
         ) {
             if let Some(name_node) = node.child_by_field_name("name") {
                 return std::str::from_utf8(self.source.get(name_node.byte_range())?)
                     .ok()
                     .map(String::from);
+            }
+        }
+
+        if node_type == "field_declaration" || node_type == "property_declaration" || node_type == "public_field_definition" {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "variable_declarator" {
+                    if let Some(name_node) = child.child_by_field_name("name") {
+                        return std::str::from_utf8(self.source.get(name_node.byte_range())?).ok().map(String::from);
+                    }
+                    let mut inner_cursor = child.walk();
+                    for inner in child.children(&mut inner_cursor) {
+                        if inner.kind() == "identifier" {
+                            return std::str::from_utf8(self.source.get(inner.byte_range())?).ok().map(String::from);
+                        }
+                    }
+                } else if child.kind() == "property_identifier" || child.kind() == "field_identifier" || child.kind() == "identifier" {
+                    return std::str::from_utf8(self.source.get(child.byte_range())?).ok().map(String::from);
+                }
             }
         }
 
@@ -1171,7 +1343,7 @@ mod tests {
             let (elements, _) = extractor.extract(&tree);
             let methods: Vec<_> = elements
                 .iter()
-                .filter(|e| e.element_type == "function" && e.name == "myMethod")
+                .filter(|e| e.element_type == "method" && e.name == "myMethod")
                 .collect();
             assert!(!methods.is_empty());
         }
@@ -1441,33 +1613,16 @@ mod tests {
         // Python call extraction uses tree-sitter `call` node (not `call_expression`),
         // so we verify noise filtering works at the is_noise_call level.
         let python_noise = vec![
-            "print",
-            "range",
-            "enumerate",
-            "isinstance",
-            "append",
-            "join",
-            "split",
-            "strip",
-            "lower",
-            "upper",
-            "sorted",
-            "reversed",
+            "print", "range", "enumerate", "isinstance", "append", "join",
+            "split", "strip", "lower", "upper", "sorted", "reversed",
         ];
         for name in &python_noise {
-            assert!(
-                is_noise_call(name),
-                "'{}' should be filtered as noise",
-                name
-            );
+            assert!(is_noise_call(name), "'{}' should be filtered as noise", name);
         }
 
         let python_legit = vec![
-            "process_data",
-            "authenticate_user",
-            "validate_input",
-            "calculate_total",
-            "fetch_records",
+            "process_data", "authenticate_user", "validate_input",
+            "calculate_total", "fetch_records",
         ];
         for name in &python_legit {
             assert!(!is_noise_call(name), "'{}' should NOT be filtered", name);
@@ -1509,14 +1664,13 @@ mod tests {
 
     #[test]
     fn test_extract_java_method() {
-        let source =
-            b"public class Service { public String process(String input) { return input; } }";
+        let source = b"public class Service { public String process(String input) { return input; } }";
         if let Some(tree) = parse_java(source) {
             let extractor = EntityExtractor::new(source, "Service.java", "java");
             let (elements, _) = extractor.extract(&tree);
             let methods: Vec<_> = elements
                 .iter()
-                .filter(|e| e.element_type == "function" && e.name == "process")
+                .filter(|e| e.element_type == "method" && e.name == "process")
                 .collect();
             assert!(!methods.is_empty(), "Should extract Java method");
         }
@@ -1530,7 +1684,7 @@ mod tests {
             let (elements, _) = extractor.extract(&tree);
             let constructors: Vec<_> = elements
                 .iter()
-                .filter(|e| e.element_type == "function" && e.name == "User")
+                .filter(|e| e.element_type == "constructor" && e.name == "User")
                 .collect();
             assert!(!constructors.is_empty(), "Should extract Java constructor");
         }
@@ -1544,9 +1698,9 @@ mod tests {
             let (elements, _) = extractor.extract(&tree);
             let enums: Vec<_> = elements
                 .iter()
-                .filter(|e| e.element_type == "class" && e.name == "Status")
+                .filter(|e| e.element_type == "enum" && e.name == "Status")
                 .collect();
-            assert!(!enums.is_empty(), "Should extract Java enum as class");
+            assert!(!enums.is_empty(), "Should extract Java enum");
         }
     }
 
@@ -1561,17 +1715,13 @@ mod tests {
                 .filter(|r| r.rel_type == "imports")
                 .collect();
             assert!(!imports.is_empty(), "Should extract Java import");
-            assert_eq!(
-                imports[0].target_qualified,
-                "com.example.service.UserService"
-            );
+            assert_eq!(imports[0].target_qualified, "com.example.service.UserService");
         }
     }
 
     #[test]
     fn test_extract_java_annotation() {
-        let source =
-            b"public class Service { @Override public String toString() { return \"\"; } }";
+        let source = b"public class Service { @Override public String toString() { return \"\"; } }";
         if let Some(tree) = parse_java(source) {
             let extractor = EntityExtractor::new(source, "Service.java", "java");
             let (elements, _) = extractor.extract(&tree);
@@ -1579,10 +1729,7 @@ mod tests {
                 .iter()
                 .filter(|e| e.element_type == "decorator")
                 .collect();
-            assert!(
-                !decorators.is_empty(),
-                "Should extract Java annotation as decorator"
-            );
+            assert!(!decorators.is_empty(), "Should extract Java annotation as decorator");
             assert_eq!(decorators[0].name, "Override");
         }
     }
@@ -1713,10 +1860,7 @@ mod tests {
                 .collect();
             assert_eq!(tested_by.len(), 1);
             assert_eq!(tested_by[0].source_qualified, "service/UserService.java");
-            assert_eq!(
-                tested_by[0].target_qualified,
-                "service/UserServiceTest.java"
-            );
+            assert_eq!(tested_by[0].target_qualified, "service/UserServiceTest.java");
         }
     }
 
@@ -1737,10 +1881,7 @@ class Container {
             let extractor = EntityExtractor::new(source, "UserService.kt", "kotlin");
             let (elements, _) = extractor.extract(&tree);
 
-            let class_elements: Vec<_> = elements
-                .iter()
-                .filter(|e| e.element_type == "class")
-                .collect();
+            let class_elements: Vec<_> = elements.iter().filter(|e| e.element_type == "class").collect();
             assert_eq!(class_elements.len(), 3); // UserService, DatabaseManager, Container
 
             assert!(class_elements.iter().any(|e| e.name == "UserService"));
@@ -1764,15 +1905,12 @@ class Account(val id: String) {
             let extractor = EntityExtractor::new(source, "Account.kt", "kotlin");
             let (elements, _) = extractor.extract(&tree);
 
-            let func_elements: Vec<_> = elements
-                .iter()
-                .filter(|e| e.element_type == "function")
-                .collect();
+            let func_elements: Vec<_> = elements.iter().filter(|e| matches!(e.element_type.as_str(), "function" | "method" | "constructor")).collect();
             assert_eq!(func_elements.len(), 3);
 
-            assert!(func_elements.iter().any(|e| e.name == "calculateInterest"));
-            assert!(func_elements.iter().any(|e| e.name == "checkBalance"));
-            assert!(func_elements.iter().any(|e| e.name == "Account"));
+            assert!(func_elements.iter().any(|e| e.name == "calculateInterest" && e.element_type == "function"));
+            assert!(func_elements.iter().any(|e| e.name == "checkBalance" && e.element_type == "method"));
+            assert!(func_elements.iter().any(|e| e.name == "Account" && e.element_type == "constructor"));
         }
     }
 
@@ -1794,6 +1932,58 @@ class UserServiceTest {
             assert_eq!(tested_by.len(), 1);
             assert_eq!(tested_by[0].source_qualified, "service/UserService.kt");
             assert_eq!(tested_by[0].target_qualified, "service/UserServiceTest.kt");
+        }
+    }
+
+    #[test]
+    fn test_extract_typescript_heritage() {
+        let source = b"class MyService extends BaseService implements IService, IDisposable { }";
+        if let Some(tree) = parse_typescript(source) {
+            let extractor = EntityExtractor::new(source, "service.ts", "typescript");
+            let (_, relationships) = extractor.extract(&tree);
+            
+            let extends: Vec<_> = relationships.iter().filter(|r| r.rel_type == "extends").collect();
+            assert_eq!(extends.len(), 1);
+            assert_eq!(extends[0].target_qualified, "__unresolved__BaseService");
+
+            let implements: Vec<_> = relationships.iter().filter(|r| r.rel_type == "implements").collect();
+            assert_eq!(implements.len(), 2);
+            assert!(implements.iter().any(|r| r.target_qualified == "__unresolved__IService"));
+            assert!(implements.iter().any(|r| r.target_qualified == "__unresolved__IDisposable"));
+        }
+    }
+
+    #[test]
+    fn test_extract_java_properties() {
+        let source = b"public class User { private String name; public int age; }";
+        if let Some(tree) = parse_java(source) {
+            let extractor = EntityExtractor::new(source, "User.java", "java");
+            let (elements, relationships) = extractor.extract(&tree);
+            
+            let props: Vec<_> = elements.iter().filter(|e| e.element_type == "property").collect();
+            assert_eq!(props.len(), 2);
+            assert!(props.iter().any(|e| e.name == "name"));
+            assert!(props.iter().any(|e| e.name == "age"));
+
+            let has_prop: Vec<_> = relationships.iter().filter(|r| r.rel_type == "has_property").collect();
+            assert_eq!(has_prop.len(), 2);
+            assert!(has_prop.iter().any(|r| r.source_qualified == "User.java::User" && r.target_qualified == "User.java::name"));
+        }
+    }
+
+    #[test]
+    fn test_extract_typescript_has_method_and_property() {
+        let source = b"class User { name: string; constructor() {} getName(): string { return this.name; } }";
+        if let Some(tree) = parse_typescript(source) {
+            let extractor = EntityExtractor::new(source, "User.ts", "typescript");
+            let (_, relationships) = extractor.extract(&tree);
+            
+            // TS now unifies method relationships to 'contains'
+            let has_method: Vec<_> = relationships.iter().filter(|r| r.rel_type == "contains" && (r.target_qualified.ends_with("::constructor") || r.target_qualified.ends_with("::getName"))).collect();
+            assert_eq!(has_method.len(), 2); // constructor and getName
+
+            let has_prop: Vec<_> = relationships.iter().filter(|r| r.rel_type == "has_property").collect();
+            assert_eq!(has_prop.len(), 1);
         }
     }
 }

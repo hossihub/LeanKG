@@ -6,29 +6,15 @@
 
 ## Installation
 
-Run the one-line installer:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/FreePeak/LeanKG/main/scripts/install.sh | bash -s -- opencode
-```
-
-This configures MCP in `~/.config/opencode/opencode.json` and adds LeanKG instructions to `~/.config/opencode/AGENTS.md`.
-
-## Manual Installation
-
-Add LeanKG MCP server to your `~/.config/opencode/opencode.json`:
+Add LeanKG to the `plugins` array in your `opencode.json` (global or project-level):
 
 ```json
 {
-  "mcp": {
-    "leankg": {
-      "type": "local",
-      "command": ["leankg", "mcp-stdio", "--watch"],
-      "enabled": true
-    }
-  }
+  "plugins": ["leankg@git+https://github.com/FreePeak/LeanKG.git"]
 }
 ```
+
+Restart OpenCode. The plugin auto-installs and LeanKG tools auto-activate on every prompt.
 
 ## Verify Installation
 
