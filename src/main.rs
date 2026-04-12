@@ -89,7 +89,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let project_path = find_project_root()?;
             let db_path = project_path.join(".leankg");
             tokio::fs::create_dir_all(&db_path).await.ok();
-            web::start_server(port, db_path).await?;
+
+            let ui_port = 5173u16;
+
+            println!("╔═══════════════════════════════════════════════════════════════╗");
+            println!("║  LeanKG Web UI                                              ║");
+            println!("╚═══════════════════════════════════════════════════════════════╝");
+            println!();
+
+            let mut vite_child = match spawn_vite_dev_server(ui_port).await {
+                Ok(child) => child,
+                Err(e) => {
+                    eprintln!("Failed to start Vite dev server: {}", e);
+                    return Err(e);
+                }
+            };
+            println!();
+            println!("🚀 Starting backend server on http://localhost:{}", port);
+            println!();
+
+            let result = web::start_server(port, db_path).await;
+            vite_child.kill().await.ok();
+            result?;
         }
         cli::CLICommand::Web { port } => {
             let port = port.unwrap_or_else(|| {
@@ -101,7 +122,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let project_path = find_project_root()?;
             let db_path = project_path.join(".leankg");
             tokio::fs::create_dir_all(&db_path).await.ok();
-            web::start_server(port, db_path).await?;
+
+            let ui_port = 5173u16;
+
+            println!("╔═══════════════════════════════════════════════════════════════╗");
+            println!("║  LeanKG Web UI                                              ║");
+            println!("╚═══════════════════════════════════════════════════════════════╝");
+            println!();
+
+            let mut vite_child = match spawn_vite_dev_server(ui_port).await {
+                Ok(child) => child,
+                Err(e) => {
+                    eprintln!("Failed to start Vite dev server: {}", e);
+                    return Err(e);
+                }
+            };
+            println!();
+            println!("🚀 Starting backend server on http://localhost:{}", port);
+            println!();
+
+            let result = web::start_server(port, db_path).await;
+            vite_child.kill().await.ok();
+            result?;
         }
         cli::CLICommand::McpStdio { watch } => {
             let project_path = find_project_root()?;
@@ -1526,6 +1568,57 @@ fn export_mermaid(relationships: &[db::models::Relationship]) -> String {
         ));
     }
     mermaid
+}
+
+async fn spawn_vite_dev_server(port: u16) -> Result<tokio::process::Child, Box<dyn std::error::Error>> {
+    let ui_path = std::path::Path::new("ui");
+
+    if !ui_path.exists() {
+        return Err(format!("UI directory not found at {}. Run 'cd ui && npm install' first.", ui_path.display()).into());
+    }
+
+    let package_json = ui_path.join("package.json");
+    if !package_json.exists() {
+        return Err(format!("package.json not found in {}. Run 'cd ui && npm install' first.", ui_path.display()).into());
+    }
+
+    let vite_exe = which_vite().await?;
+
+    println!("🚀 Starting Vite dev server on port {}...", port);
+
+    let child = tokio::process::Command::new(&vite_exe)
+        .args(["--port", &port.to_string()])
+        .current_dir(ui_path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+
+    Ok(child)
+}
+
+async fn which_vite() -> Result<String, Box<dyn std::error::Error>> {
+    let candidates = vec![
+        "npx".to_string(),
+        "npm".to_string(),
+        "pnpm".to_string(),
+        "bun".to_string(),
+    ];
+
+    let exe = which::which("npx")
+        .map(|p| p.to_string_lossy().to_string())
+        .ok();
+
+    if let Some(ref exe_path) = exe {
+        return Ok(format!("{} vite", exe_path));
+    }
+
+    for candidate in &candidates {
+        if which::which(candidate).is_ok() {
+            return Ok(candidate.to_string());
+        }
+    }
+
+    Err("No Node.js package manager found (npx, npm, pnpm, or bun). Please install Node.js and npm.".into())
 }
 
 fn run_shell_command(command: &[String], compress: bool) -> Result<(), Box<dyn std::error::Error>> {

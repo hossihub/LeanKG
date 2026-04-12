@@ -36,6 +36,7 @@ argon2 = "0.5"
 uuid = { version = "1", features = ["v4", "serde"] }
 tower-http = { version = "0.6", features = ["cors", "fs"] }
 tree-sitter-kotlin-ng = "1.1.0"
+which = "7"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 axum = "0.7"
