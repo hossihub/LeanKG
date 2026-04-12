@@ -5,8 +5,8 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y clang git curl && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs
 
-# Copy UI source first (for caching)
-COPY ui/package.json ui/package-lock.json* ./ui/
+# Copy UI source (for build)
+COPY ui/ ./ui/
 COPY Cargo.toml Cargo.lock ./
 
 # Build UI
