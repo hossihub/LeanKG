@@ -1571,17 +1571,8 @@ pub async fn api_graph_data(State(state): State<AppState>) -> impl IntoResponse 
         Err(e) => Err(e.to_string()),
     };
 
-    let mut initial_elements = elements_result.unwrap_or_default();
-    let is_massive = initial_elements.len() > 5000;
-    
-    if is_massive {
-        initial_elements.retain(|e| {
-            let t = e.element_type.to_lowercase();
-            // Retain ONLY structural boundaries to keep parsing fast and browser stable for huge repos
-            matches!(t.as_str(), "project" | "package" | "module" | "folder" | "file" | "class" | "struct" | "trait" | "namespace" | "interface")
-        });
-    }
-    
+    let initial_elements = elements_result.unwrap_or_default();
+    // Keep ALL elements including functions/methods - they have important call edges
     let elements_result: Result<Vec<_>, String> = Ok(initial_elements);
 
     match (elements_result, relationships_result) {
