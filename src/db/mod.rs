@@ -658,40 +658,72 @@ pub fn get_metrics_summary(
         total_invocations: 0,
         total_tokens_saved: 0,
         average_savings_percent: 0.0,
+        average_correctness_percent: 0.0,
         retention_days,
         by_tool: Vec::new(),
         by_day: Vec::new(),
     };
 
     let mut sum_savings_percent = 0.0;
-    let mut by_tool_map: std::collections::HashMap<String, (i64, i64, f64)> =
+    let mut count_positive_savings = 0i64;
+    let mut sum_correctness_percent = 0.0;
+    let mut count_has_correctness = 0i64;
+    let mut by_tool_map: std::collections::HashMap<String, (i64, i64, f64, f64, i64)> =
         std::collections::HashMap::new();
 
     for row in &result.rows {
         summary.total_invocations += 1;
         let saved = row[9].as_i64().unwrap_or(0);
-        summary.total_tokens_saved += saved;
         let pct = row[10].as_f64().unwrap_or(0.0);
-        sum_savings_percent += pct;
+        let correct = row[12].as_i64().unwrap_or(0);
+        let total = row[13].as_i64().unwrap_or(0);
+
+        // Only add positive savings to the total
+        if saved > 0 {
+            summary.total_tokens_saved += saved;
+            sum_savings_percent += pct;
+            count_positive_savings += 1;
+        }
+
+        // Calculate correctness percentage if both correct and total exist
+        if total > 0 {
+            let correctness = (correct as f64 / total as f64) * 100.0;
+            sum_correctness_percent += correctness;
+            count_has_correctness += 1;
+        }
 
         let tool_name = row[0].as_str().unwrap_or("unknown").to_string();
-        let entry = by_tool_map.entry(tool_name.clone()).or_insert((0, 0, 0.0));
-        entry.0 += 1;
-        entry.1 += saved;
-        entry.2 += pct;
+        let entry = by_tool_map.entry(tool_name.clone()).or_insert((0, 0, 0.0, 0.0, 0));
+        entry.0 += 1; // calls
+        if saved > 0 {
+            entry.1 += saved; // total_saved
+        }
+        entry.2 += pct; // sum_pct
+        if total > 0 {
+            entry.3 += (correct as f64 / total as f64) * 100.0; // sum_correctness
+            entry.4 += 1; // count_has_correctness
+        }
     }
 
-    if summary.total_invocations > 0 {
-        summary.average_savings_percent = sum_savings_percent / summary.total_invocations as f64;
+    if count_positive_savings > 0 {
+        summary.average_savings_percent = sum_savings_percent / count_positive_savings as f64;
+    }
+    if count_has_correctness > 0 {
+        summary.average_correctness_percent = sum_correctness_percent / count_has_correctness as f64;
     }
 
-    for (tool_name, (calls, total_saved, sum_pct)) in by_tool_map {
+    for (tool_name, (calls, total_saved, sum_pct, sum_correct, count_correct)) in by_tool_map {
         summary.by_tool.push(models::ToolMetrics {
             tool_name,
             calls,
             total_saved,
             avg_savings_percent: if calls > 0 {
                 sum_pct / calls as f64
+            } else {
+                0.0
+            },
+            avg_correctness_percent: if count_correct > 0 {
+                sum_correct / count_correct as f64
             } else {
                 0.0
             },
