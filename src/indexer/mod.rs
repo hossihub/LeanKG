@@ -879,7 +879,7 @@ mod tests {
 
     #[test]
     fn test_detect_gradle_submodules() {
-        let content = b#"include("api")
+        let content = br#"include("api")
 include("core")
 include("web-app")"#;
         let submodules = detect_gradle_submodules(content);
