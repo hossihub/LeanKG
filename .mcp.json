@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "leankg": {
+      "args": [
+        "mcp-stdio",
+        "--watch"
+      ],
+      "command": "/var/home/christian/Documents/Dev/LeanKG/target/debug/deps/mcp_tools_full_tests-a9f9067ddb2e673b"
+    }
+  }
+}
