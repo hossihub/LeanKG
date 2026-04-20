@@ -6,16 +6,23 @@ pub mod parser;
 pub mod process_processor;
 pub mod terraform;
 
+pub mod android_hilt;
 pub mod android_manifest;
 pub mod android_resources;
+pub mod android_resource_refs;
+pub mod android_room;
 pub mod config_extractor;
 pub mod framework_detector;
 pub mod gradle_extractor;
 pub mod maven_extractor;
+pub mod xml_generic;
 pub mod xml_layout;
 
+pub use android_hilt::*;
 pub use android_manifest::*;
 pub use android_resources::*;
+pub use android_resource_refs::*;
+pub use android_room::*;
 pub use cicd::*;
 pub use config_extractor::*;
 pub use extractor::*;
@@ -27,6 +34,7 @@ pub use microservice::*;
 pub use parser::*;
 pub use process_processor::*;
 pub use terraform::*;
+pub use xml_generic::*;
 pub use xml_layout::*;
 
 use crate::db::models::{CodeElement, Relationship};
@@ -40,7 +48,7 @@ pub fn find_files_sync(root: &str) -> Result<Vec<String>, Box<dyn std::error::Er
     let mut files = Vec::new();
     let extensions = [
         "go", "ts", "js", "py", "rs", "java", "kt", "kts", "tf", "yml", "yaml", "json", "toml",
-        "mod",
+        "mod", "xml",
     ];
     let config_files = [
         "package.json",
@@ -218,6 +226,15 @@ fn extract_elements_for_file(
             elements,
             relationships,
         });
+    } else if file_path.ends_with(".xml") {
+        // Handle generic XML files not caught by Android extractors
+        let extractor = crate::indexer::GenericXmlExtractor::new(source, file_path);
+        let (elements, relationships) = extractor.extract();
+        return Ok(ParsedFile {
+            element_count: elements.len(),
+            elements,
+            relationships,
+        });
     }
 
     let language = match get_language(file_path) {
@@ -270,8 +287,41 @@ fn extract_elements_for_file(
         parser.parse(source, None).ok_or("parse failed")
     })?;
 
+    // For Kotlin files, also extract Room and Hilt patterns
+    let mut room_elements = Vec::new();
+    let mut room_relationships = Vec::new();
+    let mut hilt_elements = Vec::new();
+    let mut hilt_relationships = Vec::new();
+    if language == "kotlin" {
+        let room_extractor = crate::indexer::AndroidRoomExtractor::new(source, file_path);
+        let (re, rr) = room_extractor.extract();
+        room_elements = re;
+        room_relationships = rr;
+
+        let hilt_extractor = crate::indexer::AndroidHiltExtractor::new(source, file_path);
+        let (he, hr) = hilt_extractor.extract();
+        hilt_elements = he;
+        hilt_relationships = hr;
+
+        let res_ref_extractor = crate::indexer::AndroidResourceRefExtractor::new(source, file_path);
+        let (_, res_refs) = res_ref_extractor.extract();
+    }
+
     let extractor = crate::indexer::EntityExtractor::new(source, file_path, language);
-    let (elements, relationships) = extractor.extract(&tree);
+    let (mut elements, mut relationships) = extractor.extract(&tree);
+    
+    // Merge Room, Hilt, and resource ref relationships
+    elements.extend(room_elements);
+    relationships.extend(room_relationships);
+    elements.extend(hilt_elements);
+    relationships.extend(hilt_relationships);
+    // Resource ref relationships already collected in variable, add them too
+    if language == "kotlin" {
+        let res_ref_extractor = crate::indexer::AndroidResourceRefExtractor::new(source, file_path);
+        let (_, res_refs) = res_ref_extractor.extract();
+        relationships.extend(res_refs);
+    }
+    
     Ok(ParsedFile {
         element_count: elements.len(),
         elements,

@@ -111,7 +111,7 @@ impl<'a> AndroidManifestExtractor<'a> {
                 elements.push(CodeElement {
                     qualified_name: feature_id.clone(),
                     element_type: "android_feature".to_string(),
-                    name,
+                    name: name.clone(),
                     file_path: self.file_path.to_string(),
                     language: "android".to_string(),
                     ..Default::default()
@@ -123,9 +123,78 @@ impl<'a> AndroidManifestExtractor<'a> {
                     target_qualified: feature_id,
                     rel_type: "declares_feature".to_string(),
                     confidence: 1.0,
-                    metadata: serde_json::json!({}),
+                    metadata: serde_json::json!({"feature_name": name}),
                 });
             }
+        }
+
+        // Extract application class reference
+        if let Some(app_class) = Self::extract_application_class(content) {
+            let class_name = app_class.clone();
+            relationships.push(Relationship {
+                id: None,
+                source_qualified: self.file_path.to_string(),
+                target_qualified: app_class,
+                rel_type: "has_application_class".to_string(),
+                confidence: 1.0,
+                metadata: serde_json::json!({"application_class": class_name}),
+            });
+        }
+
+        // Extract intent filters
+        let intent_filters = Self::extract_intent_filters(content);
+        for (i, (filter_content, actions, categories)) in intent_filters.iter().enumerate() {
+            let filter_id = format!("{}::intent_filter:{}", self.file_path, i);
+            
+            elements.push(CodeElement {
+                qualified_name: filter_id.clone(),
+                element_type: "android_intent_filter".to_string(),
+                name: format!("intent_filter_{}", i),
+                file_path: self.file_path.to_string(),
+                language: "android".to_string(),
+                metadata: serde_json::json!({
+                    "actions": actions,
+                    "categories": categories,
+                }),
+                ..Default::default()
+            });
+
+            relationships.push(Relationship {
+                id: None,
+                source_qualified: self.file_path.to_string(),
+                target_qualified: filter_id,
+                rel_type: "declares_intent_filter".to_string(),
+                confidence: 1.0,
+                metadata: serde_json::json!({}),
+            });
+        }
+
+        // Extract metadata
+        let metadata = Self::extract_metadata(content);
+        for (i, (name, value, resource)) in metadata.iter().enumerate() {
+            let meta_id = format!("{}::metadata:{}", self.file_path, i);
+            
+            elements.push(CodeElement {
+                qualified_name: meta_id.clone(),
+                element_type: "android_metadata".to_string(),
+                name: name.clone(),
+                file_path: self.file_path.to_string(),
+                language: "android".to_string(),
+                metadata: serde_json::json!({
+                    "value": value,
+                    "resource": resource,
+                }),
+                ..Default::default()
+            });
+
+            relationships.push(Relationship {
+                id: None,
+                source_qualified: self.file_path.to_string(),
+                target_qualified: meta_id,
+                rel_type: "has_metadata".to_string(),
+                confidence: 1.0,
+                metadata: serde_json::json!({"metadata_name": name}),
+            });
         }
 
         (elements, relationships)
@@ -152,6 +221,63 @@ impl<'a> AndroidManifestExtractor<'a> {
     fn extract_android_name(tag_content: &str, _tag_name: &str) -> Option<String> {
         let re = Regex::new(r#"android:name\s*=\s*["']([^"']+)["']"#).ok()?;
         re.captures(tag_content)
+            .and_then(|cap| cap.get(1))
+            .map(|m| m.as_str().to_string())
+    }
+
+    /// Extract intent filters with actions, categories, and data
+    pub fn extract_intent_filters(content: &str) -> Vec<(String, Vec<String>, Vec<String>)> {
+        let mut filters = Vec::new();
+        // (?s) enables dotall mode so . matches newlines for multiline intent-filters
+        let filter_re = Regex::new(r"(?s)<intent-filter[^>]*>(.*?)</intent-filter>").unwrap();
+        let action_re = Regex::new(r#"<action\s+android:name\s*=\s*["']([^"']+)["']"#).unwrap();
+        let category_re = Regex::new(r#"<category\s+android:name\s*=\s*["']([^"']+)["']"#).unwrap();
+
+        for cap in filter_re.captures_iter(content) {
+            if let Some(filter_content) = cap.get(1) {
+                let fc = filter_content.as_str();
+                
+                let actions: Vec<String> = action_re
+                    .captures_iter(fc)
+                    .filter_map(|c| c.get(1).map(|m| m.as_str().to_string()))
+                    .collect();
+                
+                let categories: Vec<String> = category_re
+                    .captures_iter(fc)
+                    .filter_map(|c| c.get(1).map(|m| m.as_str().to_string()))
+                    .collect();
+
+                if !actions.is_empty() || !categories.is_empty() {
+                    filters.push((fc.to_string(), actions, categories));
+                }
+            }
+        }
+
+        filters
+    }
+
+    /// Extract meta-data elements
+    pub fn extract_metadata(content: &str) -> Vec<(String, Option<String>, Option<String>)> {
+        let mut metadata = Vec::new();
+        let re = Regex::new(r#"<meta-data\s+android:name\s*=\s*["']([^"']+)["'](?:\s+android:value\s*=\s*["']([^"']+)["'])?(?:\s+android:resource\s*=\s*["']([^"']+)["'])?"#).unwrap();
+
+        for cap in re.captures_iter(content) {
+            let name = cap.get(1).map(|m| m.as_str().to_string());
+            let value = cap.get(2).map(|m| m.as_str().to_string());
+            let resource = cap.get(3).map(|m| m.as_str().to_string());
+            
+            if let Some(n) = name {
+                metadata.push((n, value, resource));
+            }
+        }
+
+        metadata
+    }
+
+    /// Extract application class name from manifest
+    pub fn extract_application_class(content: &str) -> Option<String> {
+        let re = Regex::new(r#"<application[^>]*android:name\s*=\s*["']([^"']+)["']"#).unwrap();
+        re.captures(content)
             .and_then(|cap| cap.get(1))
             .map(|m| m.as_str().to_string())
     }
