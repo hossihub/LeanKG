@@ -11,70 +11,82 @@ const TV_APP_DIR: &str = "tests/fixtures/complex_scenarios/tv_app";
 fn test_manifest_extraction() {
     let source = fs::read_to_string(format!("{}/AndroidManifest.xml", XML_FIXTURES_DIR))
         .expect("Manifest fixture not found");
-    
+
     let extractor = AndroidManifestExtractor::new(source.as_bytes(), "AndroidManifest.xml");
     let (elements, relationships) = extractor.extract();
 
     // Should have manifest element
-    let manifest: Vec<_> = elements.iter()
+    let manifest: Vec<_> = elements
+        .iter()
         .filter(|e| e.element_type == "android_manifest")
         .collect();
     assert_eq!(manifest.len(), 1, "Expected 1 manifest element");
 
     // Should have activities
-    let activities: Vec<_> = elements.iter()
+    let activities: Vec<_> = elements
+        .iter()
         .filter(|e| e.element_type == "android_activity")
         .collect();
     assert!(!activities.is_empty(), "Expected activities in manifest");
 
     // Should have services
-    let services: Vec<_> = elements.iter()
+    let services: Vec<_> = elements
+        .iter()
         .filter(|e| e.element_type == "android_service")
         .collect();
     assert!(!services.is_empty(), "Expected services in manifest");
 
     // Check component declarations
-    let declares: Vec<_> = relationships.iter()
+    let declares: Vec<_> = relationships
+        .iter()
         .filter(|r| r.rel_type == "declares_component")
         .collect();
-    assert!(!declares.is_empty(), "Expected component declaration relationships");
+    assert!(
+        !declares.is_empty(),
+        "Expected component declaration relationships"
+    );
 }
 
 #[test]
 fn test_manifest_intent_filters() {
     let source = fs::read_to_string(format!("{}/AndroidManifest.xml", XML_FIXTURES_DIR))
         .expect("Manifest fixture not found");
-    
+
     // Test intent filter extraction
     let filters = AndroidManifestExtractor::extract_intent_filters(&source);
     assert!(!filters.is_empty(), "Expected intent filters in manifest");
 
     // Check for MAIN action
-    let has_main = filters.iter().any(|(_, actions, _)| {
-        actions.iter().any(|a| a.contains("MAIN"))
-    });
+    let has_main = filters
+        .iter()
+        .any(|(_, actions, _)| actions.iter().any(|a| a.contains("MAIN")));
     assert!(has_main, "Expected MAIN action in intent filters");
 
     // Check for LEANBACK_LAUNCHER category (TV-specific)
-    let has_leanback = filters.iter().any(|(_, _, categories)| {
-        categories.iter().any(|c| c.contains("LEANBACK"))
-    });
-    assert!(has_leanback, "Expected LEANBACK_LAUNCHER category for TV app");
+    let has_leanback = filters
+        .iter()
+        .any(|(_, _, categories)| categories.iter().any(|c| c.contains("LEANBACK")));
+    assert!(
+        has_leanback,
+        "Expected LEANBACK_LAUNCHER category for TV app"
+    );
 }
 
 #[test]
 fn test_manifest_metadata() {
     let source = fs::read_to_string(format!("{}/AndroidManifest.xml", TV_APP_DIR))
         .expect("TV app manifest not found");
-    
+
     // Test metadata extraction
     let metadata = AndroidManifestExtractor::extract_metadata(&source);
     // TV app manifest may or may not have metadata - just verify function works
-    
+
     for (name, value, resource) in &metadata {
         assert!(!name.is_empty(), "Metadata should have name");
-        assert!(value.is_some() || resource.is_some(), 
-            "Metadata should have value or resource");
+        assert!(
+            value.is_some() || resource.is_some(),
+            "Metadata should have value or resource"
+        );
     }
 }
 
@@ -82,26 +94,29 @@ fn test_manifest_metadata() {
 fn test_manifest_application_class() {
     let source = fs::read_to_string(format!("{}/AndroidManifest.xml", TV_APP_DIR))
         .expect("TV app manifest not found");
-    
+
     // Should detect Application class
     let app_class = AndroidManifestExtractor::extract_application_class(&source);
     assert!(app_class.is_some(), "Expected Application class reference");
-    
+
     let class_name = app_class.unwrap();
-    assert!(class_name.contains("Application"), 
-        "Application class name should contain 'Application'");
+    assert!(
+        class_name.contains("Application"),
+        "Application class name should contain 'Application'"
+    );
 }
 
 #[test]
 fn test_manifest_permissions() {
     let source = fs::read_to_string(format!("{}/AndroidManifest.xml", XML_FIXTURES_DIR))
         .expect("Manifest fixture not found");
-    
+
     let extractor = AndroidManifestExtractor::new(source.as_bytes(), "AndroidManifest.xml");
     let (elements, _) = extractor.extract();
 
     // Should have permission elements
-    let permissions: Vec<_> = elements.iter()
+    let permissions: Vec<_> = elements
+        .iter()
         .filter(|e| e.element_type == "android_permission")
         .collect();
     assert!(!permissions.is_empty(), "Expected permission declarations");
@@ -115,12 +130,13 @@ fn test_manifest_permissions() {
 fn test_manifest_features() {
     let source = fs::read_to_string(format!("{}/AndroidManifest.xml", XML_FIXTURES_DIR))
         .expect("Manifest fixture not found");
-    
+
     let extractor = AndroidManifestExtractor::new(source.as_bytes(), "AndroidManifest.xml");
     let (elements, _) = extractor.extract();
 
     // Should have feature elements
-    let features: Vec<_> = elements.iter()
+    let features: Vec<_> = elements
+        .iter()
         .filter(|e| e.element_type == "android_feature")
         .collect();
     assert!(!features.is_empty(), "Expected feature declarations");
@@ -143,15 +159,21 @@ fn test_layout_extraction() {
     ];
 
     for path in layout_files {
-        let content = fs::read_to_string(&path)
-            .expect(&format!("Layout fixture not found: {}", path));
-        
+        let content =
+            fs::read_to_string(&path).expect(&format!("Layout fixture not found: {}", path));
+
         // Basic XML validation
-        assert!(content.starts_with("<?xml"), "Should start with XML declaration");
+        assert!(
+            content.starts_with("<?xml"),
+            "Should start with XML declaration"
+        );
         assert!(content.contains("<"), "Should contain XML tags");
-        
+
         // Check for Android namespace
-        assert!(content.contains("xmlns:android"), "Should have Android namespace");
+        assert!(
+            content.contains("xmlns:android"),
+            "Should have Android namespace"
+        );
     }
 }
 
@@ -161,9 +183,18 @@ fn test_preferences_extraction() {
         .expect("Preferences fixture not found");
 
     // Check for preference patterns
-    assert!(content.contains("PreferenceScreen"), "Should have PreferenceScreen");
-    assert!(content.contains("SwitchPreference"), "Should have SwitchPreference");
-    assert!(content.contains("ListPreference"), "Should have ListPreference");
+    assert!(
+        content.contains("PreferenceScreen"),
+        "Should have PreferenceScreen"
+    );
+    assert!(
+        content.contains("SwitchPreference"),
+        "Should have SwitchPreference"
+    );
+    assert!(
+        content.contains("ListPreference"),
+        "Should have ListPreference"
+    );
 }
 
 #[test]
@@ -173,8 +204,14 @@ fn test_drawable_extraction() {
 
     // Check for selector patterns
     assert!(content.contains("<selector"), "Should have selector root");
-    assert!(content.contains("state_focused"), "Should have focused state");
-    assert!(content.contains("state_pressed"), "Should have pressed state");
+    assert!(
+        content.contains("state_focused"),
+        "Should have focused state"
+    );
+    assert!(
+        content.contains("state_pressed"),
+        "Should have pressed state"
+    );
 }
 
 #[test]
@@ -183,8 +220,14 @@ fn test_strings_extraction() {
         .expect("Strings fixture not found");
 
     // Check for string patterns
-    assert!(content.contains("<string name="), "Should have string resources");
-    assert!(content.contains("<string-array"), "Should have string arrays");
+    assert!(
+        content.contains("<string name="),
+        "Should have string resources"
+    );
+    assert!(
+        content.contains("<string-array"),
+        "Should have string arrays"
+    );
     assert!(content.contains("<plurals"), "Should have plurals");
     assert!(content.contains("%1$d"), "Should have format strings");
 }
@@ -195,9 +238,18 @@ fn test_colors_extraction() {
         .expect("Colors fixture not found");
 
     // Check for Material 3 color patterns
-    assert!(content.contains("<color name=\"primary\">"), "Should have primary color");
-    assert!(content.contains("<color name=\"surface\">"), "Should have surface color");
-    assert!(content.contains("<color name=\"error\">"), "Should have error color");
+    assert!(
+        content.contains("<color name=\"primary\">"),
+        "Should have primary color"
+    );
+    assert!(
+        content.contains("<color name=\"surface\">"),
+        "Should have surface color"
+    );
+    assert!(
+        content.contains("<color name=\"error\">"),
+        "Should have error color"
+    );
 }
 
 #[test]
@@ -206,7 +258,16 @@ fn test_styles_extraction() {
         .expect("Styles fixture not found");
 
     // Check for style patterns
-    assert!(content.contains("<style name="), "Should have style definitions");
-    assert!(content.contains("parent="), "Should have parent inheritance");
-    assert!(content.contains("Theme.Leanback"), "Should reference Leanback theme");
+    assert!(
+        content.contains("<style name="),
+        "Should have style definitions"
+    );
+    assert!(
+        content.contains("parent="),
+        "Should have parent inheritance"
+    );
+    assert!(
+        content.contains("Theme.Leanback"),
+        "Should reference Leanback theme"
+    );
 }

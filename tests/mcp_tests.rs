@@ -83,6 +83,7 @@ mod tool_registry_tests {
             let has_cluster_id = props.get("cluster_id").is_some();
             let has_cluster_label = props.get("cluster_label").is_some();
             let has_service = props.get("service").is_some();
+            let has_limit = props.get("limit").is_some();
 
             assert!(
                 is_empty
@@ -106,7 +107,8 @@ mod tool_registry_tests {
                     || has_min_confidence
                     || has_cluster_id
                     || has_cluster_label
-                    || has_service,
+                    || has_service
+                    || has_limit,
                 "Tool {} should have at least one parameter or empty properties",
                 tool.name
             );
