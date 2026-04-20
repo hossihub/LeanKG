@@ -126,6 +126,10 @@ impl<'a> AndroidRoomExtractor<'a> {
         databases
     }
 
+    /// Find the end of a class body by counting matching braces
+    ///
+    /// Uses byte indices from char_indices() which correctly handles multi-byte UTF-8
+    /// characters and is appropriate for Rust string slicing operations
     fn find_class_body_end(content: &str, class_start: usize) -> usize {
         let after = &content[class_start..];
         let mut depth = 0i32;
@@ -219,15 +223,20 @@ impl<'a> AndroidRoomExtractor<'a> {
             }
 
             // Link DAOs to database (heuristic: DAOs referenced in same file as database)
+            // Confidence 0.7: Same-file presence is a strong indicator but not definitive proof
+            // LIMITATION: This heuristic may produce false positives if multiple databases
+            // are defined in the same file or if DAOs are shared across databases
             for dao in daos {
-                // Simple heuristic: if DAO is in same file as Database, assume relationship
                 relationships.push(Relationship {
                     id: None,
                     source_qualified: db.qualified_name.clone(),
                     target_qualified: dao.qualified_name.clone(),
                     rel_type: "room_database_contains_dao".to_string(),
                     confidence: 0.7,
-                    metadata: serde_json::json!({}),
+                    metadata: serde_json::json!({
+                        "heuristic": "same_file_presence",
+                        "note": "DAO linked to Database by co-location; false positives possible"
+                    }),
                 });
             }
         }

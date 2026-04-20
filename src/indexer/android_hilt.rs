@@ -68,6 +68,10 @@ impl<'a> AndroidHiltExtractor<'a> {
         modules
     }
 
+    /// Find the end of a class body by counting matching braces
+    ///
+    /// Uses byte indices from char_indices() which correctly handles multi-byte UTF-8
+    /// characters and is appropriate for Rust string slicing operations
     fn find_class_body_end(content: &str, class_start: usize) -> usize {
         let after = &content[class_start..];
         let mut depth = 0i32;
