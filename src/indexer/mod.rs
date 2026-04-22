@@ -149,6 +149,10 @@ fn try_extract_android(
         let extractor = crate::indexer::AndroidResourcesExtractor::new(source, file_path);
         return Some(extractor.extract());
     }
+    if file_path.contains("/res/navigation/") && file_path.ends_with(".xml") {
+        let extractor = crate::indexer::JetpackNavExtractor::new(source, file_path);
+        return Some(extractor.extract_xml());
+    }
     if file_path.contains("/res/") && file_path.ends_with(".xml") {
         let extractor = crate::indexer::XmlLayoutExtractor::new(source, file_path);
         return Some(extractor.extract());
@@ -318,6 +322,8 @@ fn extract_elements_for_file(
     let mut annotation_elements = Vec::new();
     let mut annotation_relationships = Vec::new();
     let mut resource_link_rels = Vec::new();
+    let mut nav_elements = Vec::new();
+    let mut nav_relationships = Vec::new();
     if language == "kotlin" {
         let room_extractor = crate::indexer::AndroidRoomExtractor::new(source, file_path);
         let (re, rr) = room_extractor.extract();
@@ -344,6 +350,26 @@ fn extract_elements_for_file(
         let resource_linker = crate::indexer::AndroidResourceLinker::new(source, file_path);
         let (_, rl) = resource_linker.extract();
         resource_link_rels = rl;
+
+        // Extract navigation patterns
+        let frag_nav_extractor = crate::indexer::FragmentNavExtractor::new(source, file_path);
+        let (_, fnr) = frag_nav_extractor.extract();
+        nav_relationships.extend(fnr);
+
+        let leanback_extractor = crate::indexer::LeanbackNavExtractor::new(source, file_path);
+        let (lne, lnr) = leanback_extractor.extract();
+        nav_elements.extend(lne);
+        nav_relationships.extend(lnr);
+
+        // JetpackNavExtractor Kotlin DSL
+        if content.windows(b"NavGraphBuilder".len()).any(|w| w == b"NavGraphBuilder")
+            || content.windows(b"composable(".len()).any(|w| w == b"composable(")
+        {
+            let nav_dsl_extractor = crate::indexer::JetpackNavExtractor::new(source, file_path);
+            let (mut ne, mut nr) = nav_dsl_extractor.extract_kotlin_dsl();
+            nav_elements.extend(ne);
+            nav_relationships.extend(nr);
+        }
     }
 
     let extractor = crate::indexer::EntityExtractor::new(source, file_path, language);
@@ -363,6 +389,8 @@ fn extract_elements_for_file(
     elements.extend(annotation_elements);
     relationships.extend(annotation_relationships);
     relationships.extend(resource_link_rels);
+    elements.extend(nav_elements);
+    relationships.extend(nav_relationships);
 
     Ok(ParsedFile {
         element_count: elements.len(),
