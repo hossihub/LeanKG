@@ -67,8 +67,9 @@ impl<'a> JetpackNavExtractor<'a> {
             file_path: self.file_path.to_string(),
             line_start: root.range().start as u32,
             line_end: root.range().end as u32,
-            language: "android".to_string(),
+            language: "xml".to_string(),
             metadata: serde_json::json!({
+                "graph_id": graph_id,
                 "start_destination": start_dest_id,
             }),
             ..Default::default()
@@ -99,9 +100,10 @@ impl<'a> JetpackNavExtractor<'a> {
                 file_path: self.file_path.to_string(),
                 line_start: child.range().start as u32,
                 line_end: child.range().end as u32,
-                language: "android".to_string(),
+                language: "xml".to_string(),
                 parent_qualified: Some(graph_qn.clone()),
                 metadata: serde_json::json!({
+                    "destination_id": dest_id,
                     "dest_type": tag,
                     "class_name": class_name,
                     "start_destination": is_start,
@@ -116,6 +118,7 @@ impl<'a> JetpackNavExtractor<'a> {
                         let action_id = android_id(&sub);
                         let target_raw = app_attr(&sub, "destination");
                         let target_id = target_raw.as_deref().map(strip_id_prefix);
+                        let pop_up_to = app_attr(&sub, "popUpTo");
 
                         if let Some(target) = target_id {
                             let target_qn = format!("{}::{}", graph_qn, target);
@@ -127,6 +130,7 @@ impl<'a> JetpackNavExtractor<'a> {
                                 confidence: 1.0,
                                 metadata: serde_json::json!({
                                     "action_id": action_id,
+                                    "pop_up_to": pop_up_to,
                                 }),
                             });
                         }
@@ -149,7 +153,7 @@ impl<'a> JetpackNavExtractor<'a> {
                             file_path: self.file_path.to_string(),
                             line_start: sub.range().start as u32,
                             line_end: sub.range().end as u32,
-                            language: "android".to_string(),
+                            language: "xml".to_string(),
                             parent_qualified: Some(dest_qn.clone()),
                             metadata: serde_json::json!({
                                 "arg_type": arg_type,
@@ -164,7 +168,9 @@ impl<'a> JetpackNavExtractor<'a> {
                             target_qualified: arg_qn,
                             rel_type: "requires_arg".to_string(),
                             confidence: 1.0,
-                            metadata: serde_json::Value::Object(serde_json::Map::new()),
+                            metadata: serde_json::json!({
+                                "arg_name": arg_name,
+                            }),
                         });
                     }
                     "deepLink" => {
@@ -181,7 +187,7 @@ impl<'a> JetpackNavExtractor<'a> {
                             file_path: self.file_path.to_string(),
                             line_start: sub.range().start as u32,
                             line_end: sub.range().end as u32,
-                            language: "android".to_string(),
+                            language: "xml".to_string(),
                             parent_qualified: Some(dest_qn.clone()),
                             metadata: serde_json::json!({ "uri": uri }),
                             ..Default::default()
