@@ -441,6 +441,52 @@ impl ToolRegistry {
                 }),
             },
             ToolDefinition {
+                name: "get_nav_graph".to_string(),
+                description: "Get the navigation graph structure for a screen or nav file. Returns destinations, actions, arguments, and deep links.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "file": {"type": "string", "description": "Nav XML file path or Kotlin DSL file path"},
+                        "graph_id": {"type": "string", "description": "Nav graph ID (alternative to file)"}
+                    },
+                    "required": []
+                }),
+            },
+            ToolDefinition {
+                name: "find_route".to_string(),
+                description: "Find which destination a route string or action ID resolves to.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "route": {"type": "string", "description": "Route string (e.g. 'profile/{userId}') or action ID (e.g. 'action_home_to_detail')"}
+                    },
+                    "required": ["route"]
+                }),
+            },
+            ToolDefinition {
+                name: "get_screen_args".to_string(),
+                description: "List all arguments a screen/destination requires, with types and default values.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "destination": {"type": "string", "description": "Destination name, route, or file path"},
+                        "limit": {"type": "integer", "default": 20, "description": "Maximum results"}
+                    },
+                    "required": ["destination"]
+                }),
+            },
+            ToolDefinition {
+                name: "get_nav_callers".to_string(),
+                description: "Find all call sites that navigate to a given destination. Use for impact radius when changing screen args.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "destination": {"type": "string", "description": "Destination name, route, fragment class, or activity class"}
+                    },
+                    "required": ["destination"]
+                }),
+            },
+            ToolDefinition {
                 name: "get_service_graph".to_string(),
                 description: "Get microservice call graph with service repos as nodes. Returns aggregated service-to-service topology from service_calls relationships. The current service repo is the biggest node.".to_string(),
                 input_schema: json!({
