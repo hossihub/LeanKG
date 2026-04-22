@@ -190,6 +190,10 @@ impl ToolHandler {
             "get_cluster_context" => self.get_cluster_context(arguments),
             "run_raw_query" => self.run_raw_query(arguments),
             "get_service_graph" => self.get_service_graph(arguments),
+            "get_nav_graph" => self.get_nav_graph(arguments),
+            "find_route" => self.find_route(arguments),
+            "get_screen_args" => self.get_screen_args(arguments),
+            "get_nav_callers" => self.get_nav_callers(arguments),
             _ => Err(format!("Unknown tool: {}", tool_name)),
         };
 
@@ -1690,6 +1694,115 @@ impl ToolHandler {
             .map_err(|e| e.to_string())?;
 
         serde_json::to_value(&sg).map_err(|e| format!("Failed to serialize service graph: {}", e))
+    }
+
+    fn get_nav_graph(&self, args: &Value) -> Result<Value, String> {
+        let file = args["file"].as_str();
+        let graph_id = args["graph_id"].as_str();
+
+        let all_elements = self.graph_engine.all_elements().map_err(|e| e.to_string())?;
+
+        let nav_elements: Vec<_> = all_elements
+            .iter()
+            .filter(|e| {
+                let is_nav = matches!(e.element_type.as_str(), "nav_graph" | "nav_destination" | "nav_action" | "nav_argument" | "nav_deep_link");
+                if let Some(f) = file {
+                    is_nav && e.file_path.contains(f)
+                } else {
+                    is_nav
+                }
+            })
+            .filter(|e| {
+                if let Some(gid) = graph_id {
+                    e.qualified_name.contains(gid)
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        let nav_rels = self.graph_engine.all_relationships().map_err(|e| e.to_string())?
+            .into_iter()
+            .filter(|r| matches!(r.rel_type.as_str(), "navigates_to" | "nav_action" | "provides_arg" | "requires_arg" | "deep_link" | "presents"))
+            .collect::<Vec<_>>();
+
+        Ok(json!({
+            "elements": nav_elements,
+            "relationships": nav_rels
+        }))
+    }
+
+    fn find_route(&self, args: &Value) -> Result<Value, String> {
+        let route = args["route"].as_str().ok_or("Missing 'route' parameter")?;
+
+        let all_elements = self.graph_engine.all_elements().map_err(|e| e.to_string())?;
+        let all_rels = self.graph_engine.all_relationships().map_err(|e| e.to_string())?;
+
+        let destinations: Vec<_> = all_elements
+            .iter()
+            .filter(|e| e.element_type == "nav_destination" && e.name.contains(route))
+            .collect();
+
+        let actions: Vec<_> = all_rels
+            .iter()
+            .filter(|r| r.rel_type == "nav_action" && r.target_qualified.contains(route))
+            .collect();
+
+        Ok(json!({
+            "route": route,
+            "destinations": destinations,
+            "actions": actions
+        }))
+    }
+
+    fn get_screen_args(&self, args: &Value) -> Result<Value, String> {
+        let destination = args["destination"].as_str().ok_or("Missing 'destination' parameter")?;
+        let limit = args["limit"].as_i64().unwrap_or(20) as usize;
+
+        let all_elements = self.graph_engine.all_elements().map_err(|e| e.to_string())?;
+        let all_rels = self.graph_engine.all_relationships().map_err(|e| e.to_string())?;
+
+        let dest_elem = all_elements
+            .iter()
+            .find(|e| e.element_type == "nav_destination" && e.name.contains(destination));
+
+        let args: Vec<_> = if let Some(d) = dest_elem {
+            all_elements
+                .iter()
+                .filter(|e| e.element_type == "nav_argument" && e.parent_qualified.as_ref() == Some(&d.qualified_name))
+                .take(limit)
+                .cloned()
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        Ok(json!({
+            "destination": destination,
+            "arguments": args
+        }))
+    }
+
+    fn get_nav_callers(&self, args: &Value) -> Result<Value, String> {
+        let destination = args["destination"].as_str().ok_or("Missing 'destination' parameter")?;
+
+        let all_rels = self.graph_engine.all_relationships().map_err(|e| e.to_string())?;
+
+        let callers: Vec<_> = all_rels
+            .iter()
+            .filter(|r| {
+                r.rel_type == "navigates_to" && (
+                    r.target_qualified.contains(destination) ||
+                    r.target_qualified.contains(&format!("class:{}", destination))
+                )
+            })
+            .map(|r| r.source_qualified.clone())
+            .collect();
+
+        Ok(json!({
+            "destination": destination,
+            "callers": callers
+        }))
     }
 
     fn get_cluster_context(&self, args: &Value) -> Result<Value, String> {
