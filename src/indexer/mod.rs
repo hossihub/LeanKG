@@ -8,6 +8,8 @@ pub mod terraform;
 
 pub mod android_hilt;
 pub mod android_manifest;
+pub mod android_nav_jetpack;
+pub mod android_nav_model;
 pub mod android_resource_linker;
 pub mod android_resource_refs;
 pub mod android_resources;
