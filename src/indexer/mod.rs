@@ -8,12 +8,16 @@ pub mod terraform;
 
 pub mod android_hilt;
 pub mod android_manifest;
+pub mod android_resource_linker;
 pub mod android_resource_refs;
 pub mod android_resources;
 pub mod android_room;
+pub mod call_graph;
 pub mod config_extractor;
 pub mod framework_detector;
 pub mod gradle_extractor;
+pub mod gradle_module_extractor;
+pub mod kotlin_annotations;
 pub mod kotlin_utils;
 pub mod maven_extractor;
 pub mod xml_generic;
@@ -21,15 +25,20 @@ pub mod xml_layout;
 
 pub use android_hilt::AndroidHiltExtractor;
 pub use android_manifest::*;
+pub use android_resource_linker::AndroidResourceLinker;
 pub use android_resource_refs::AndroidResourceRefExtractor;
 pub use android_resources::*;
 pub use android_room::AndroidRoomExtractor;
+#[allow(unused_imports)]
+pub use call_graph::{extract_calls_with_resolution, CallGraphBuilder};
 pub use cicd::*;
 pub use config_extractor::*;
 pub use extractor::*;
 pub use framework_detector::*;
 pub use git::*;
 pub use gradle_extractor::*;
+pub use gradle_module_extractor::GradleModuleExtractor;
+pub use kotlin_annotations::KotlinAnnotationExtractor;
 pub use maven_extractor::*;
 pub use microservice::*;
 pub use parser::*;
@@ -207,7 +216,13 @@ fn extract_elements_for_file(
         || file_name == "settings.gradle.kts"
     {
         let extractor = crate::indexer::GradleExtractor::new(source, file_path);
-        let (elements, relationships) = extractor.extract();
+        let (elements, mut relationships) = extractor.extract();
+
+        // Also extract module dependencies
+        let module_extractor = crate::indexer::GradleModuleExtractor::new(source, file_path);
+        let (_, mod_rels) = module_extractor.extract();
+        relationships.extend(mod_rels);
+
         return Ok(ParsedFile {
             element_count: elements.len(),
             elements,
@@ -293,6 +308,9 @@ fn extract_elements_for_file(
     let mut hilt_elements = Vec::new();
     let mut hilt_relationships = Vec::new();
     let mut res_ref_relationships = Vec::new();
+    let mut annotation_elements = Vec::new();
+    let mut annotation_relationships = Vec::new();
+    let mut resource_link_rels = Vec::new();
     if language == "kotlin" {
         let room_extractor = crate::indexer::AndroidRoomExtractor::new(source, file_path);
         let (re, rr) = room_extractor.extract();
@@ -307,16 +325,37 @@ fn extract_elements_for_file(
         let res_ref_extractor = crate::indexer::AndroidResourceRefExtractor::new(source, file_path);
         let (_, rr) = res_ref_extractor.extract();
         res_ref_relationships = rr;
+
+        // Extract Kotlin annotations
+        let annotation_extractor =
+            crate::indexer::KotlinAnnotationExtractor::new(source, file_path);
+        let (ae, ar) = annotation_extractor.extract(&tree);
+        annotation_elements = ae;
+        annotation_relationships = ar;
+
+        // Extract enhanced resource linking
+        let resource_linker = crate::indexer::AndroidResourceLinker::new(source, file_path);
+        let (_, rl) = resource_linker.extract();
+        resource_link_rels = rl;
     }
 
     let extractor = crate::indexer::EntityExtractor::new(source, file_path, language);
     let (mut elements, mut relationships) = extractor.extract(&tree);
+
+    // Extract calls with resolution using CallGraphBuilder
+    let call_rels = crate::indexer::call_graph::extract_calls_with_resolution(
+        &tree, source, file_path, language,
+    );
+    relationships.extend(call_rels);
 
     elements.extend(room_elements);
     relationships.extend(room_relationships);
     elements.extend(hilt_elements);
     relationships.extend(hilt_relationships);
     relationships.extend(res_ref_relationships);
+    elements.extend(annotation_elements);
+    relationships.extend(annotation_relationships);
+    relationships.extend(resource_link_rels);
 
     Ok(ParsedFile {
         element_count: elements.len(),
@@ -529,7 +568,13 @@ pub fn index_file_sync(
         || file_name == "settings.gradle.kts"
     {
         let extractor = crate::indexer::GradleExtractor::new(source, file_path);
-        let (elements, relationships) = extractor.extract();
+        let (elements, mut relationships) = extractor.extract();
+
+        // Also extract module dependencies
+        let module_extractor = crate::indexer::GradleModuleExtractor::new(source, file_path);
+        let (_, mod_rels) = module_extractor.extract();
+        relationships.extend(mod_rels);
+
         if elements.is_empty() && relationships.is_empty() {
             return Ok(0);
         }

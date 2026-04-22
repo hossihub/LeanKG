@@ -252,6 +252,21 @@ impl ToolRegistry {
                 }),
             },
             ToolDefinition {
+                name: "search_annotations".to_string(),
+                description: "Search for code elements by annotation. Returns classes, functions, or properties with matching annotations.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "annotation_name": {"type": "string", "description": "Annotation name to search for (e.g., 'Entity', 'HiltViewModel')"},
+                        "target_type": {"type": "string", "enum": ["class", "function", "property", "parameter", "all"], "description": "Filter by target type"},
+                        "file_pattern": {"type": "string", "description": "Optional file pattern to limit search"},
+                        "limit": {"type": "integer", "default": 20, "description": "Maximum number of results (default: 20)"},
+                        "project": {"type": "string", "description": "Optional: project path to search in"}
+                    },
+                    "required": ["annotation_name"]
+                }),
+            },
+            ToolDefinition {
                 name: "generate_doc".to_string(),
                 description: "Generate documentation for file".to_string(),
                 input_schema: json!({

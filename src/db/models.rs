@@ -41,6 +41,11 @@ pub enum RelationshipType {
     UsesDimen,
     UsesDrawable,
     UsesStyle,
+    Annotates,
+    InflatesLayout,
+    UsesViewBinding,
+    DependsOnModule,
+    UsesLibrary,
 }
 
 impl RelationshipType {
@@ -83,6 +88,11 @@ impl RelationshipType {
             RelationshipType::UsesDimen => "uses_dimen",
             RelationshipType::UsesDrawable => "uses_drawable",
             RelationshipType::UsesStyle => "uses_style",
+            RelationshipType::Annotates => "annotates",
+            RelationshipType::InflatesLayout => "inflates_layout",
+            RelationshipType::UsesViewBinding => "uses_viewbinding",
+            RelationshipType::DependsOnModule => "depends_on_module",
+            RelationshipType::UsesLibrary => "uses_library",
         }
     }
 
@@ -127,6 +137,11 @@ impl RelationshipType {
             "uses_dimen" => Some(RelationshipType::UsesDimen),
             "uses_drawable" => Some(RelationshipType::UsesDrawable),
             "uses_style" => Some(RelationshipType::UsesStyle),
+            "annotates" => Some(RelationshipType::Annotates),
+            "inflates_layout" => Some(RelationshipType::InflatesLayout),
+            "uses_viewbinding" => Some(RelationshipType::UsesViewBinding),
+            "depends_on_module" => Some(RelationshipType::DependsOnModule),
+            "uses_library" => Some(RelationshipType::UsesLibrary),
             _ => None,
         }
     }

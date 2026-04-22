@@ -139,6 +139,7 @@ impl ToolHandler {
             "get_impact_radius" => compressor.compress_impact_radius(&response),
             "get_call_graph" => compressor.compress_call_graph(&response),
             "search_code" => compressor.compress_search_code(&response),
+            "search_annotations" => compressor.compress_search_annotations(&response),
             "get_dependencies" => compressor.compress_dependencies(&response),
             "get_dependents" => compressor.compress_dependents(&response),
             "get_context" => compressor.compress_context(&response),
@@ -172,6 +173,7 @@ impl ToolHandler {
             "get_callers" => self.get_callers(arguments),
             "get_call_graph" => self.get_call_graph(arguments),
             "search_code" => self.search_code(arguments),
+            "search_annotations" => self.search_annotations(arguments),
             "generate_doc" => self.generate_doc(arguments),
             "find_large_functions" => self.find_large_functions(arguments),
             "get_tested_by" => self.get_tested_by(arguments),
@@ -1213,6 +1215,77 @@ impl ToolHandler {
             .collect();
 
         Ok(json!({ "results": matches }))
+    }
+
+    fn search_annotations(&self, args: &Value) -> Result<Value, String> {
+        let annotation_name = args["annotation_name"]
+            .as_str()
+            .ok_or("Missing 'annotation_name' parameter")?;
+        let target_type = args["target_type"].as_str();
+        let file_pattern = args["file_pattern"].as_str();
+        let limit = args["limit"].as_i64().unwrap_or(20) as usize;
+
+        let all_elements = self
+            .graph_engine
+            .all_elements()
+            .map_err(|e| e.to_string())?;
+
+        let all_relationships = self
+            .graph_engine
+            .all_relationships()
+            .map_err(|e| e.to_string())?;
+
+        let element_by_qn: std::collections::HashMap<&str, &CodeElement> = all_elements
+            .iter()
+            .map(|e| (e.qualified_name.as_str(), e))
+            .collect();
+
+        let annotates_by_src: std::collections::HashMap<&str, &Relationship> = all_relationships
+            .iter()
+            .filter(|r| r.rel_type == "annotates")
+            .map(|r| (r.source_qualified.as_str(), r))
+            .collect();
+
+        let annotations = all_elements
+            .iter()
+            .filter(|e| e.element_type == "annotation" && e.name == annotation_name)
+            .filter(|e| file_pattern.is_none_or(|p| e.file_path.contains(p)));
+
+        let results: Vec<_> = annotations
+            .filter_map(|ann| {
+                let target_rel = annotates_by_src.get(ann.qualified_name.as_str())?;
+                let target_elem = element_by_qn.get(target_rel.target_qualified.as_str())?;
+
+                if let Some(tt) = target_type {
+                    let actual_type = ann
+                        .metadata
+                        .get("target_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&target_elem.element_type);
+                    if actual_type != tt && tt != "all" {
+                        return None;
+                    }
+                }
+
+                Some(json!({
+                    "annotation_name": ann.name,
+                    "target_qualified": target_elem.qualified_name,
+                    "target_name": target_elem.name,
+                    "target_type": ann.metadata.get("target_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&target_elem.element_type),
+                    "file_path": ann.file_path,
+                    "line": ann.line_start,
+                    "arguments": ann.metadata.get("arguments").cloned().unwrap_or(json!({}))
+                }))
+            })
+            .take(limit)
+            .collect();
+
+        Ok(json!({
+            "annotations": results,
+            "count": results.len()
+        }))
     }
 
     fn generate_doc(&self, args: &Value) -> Result<Value, String> {

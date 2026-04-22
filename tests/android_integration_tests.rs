@@ -2,10 +2,12 @@
 //! Tests full TV app scenario with cross-file relationships
 
 use leankg::indexer::{
-    AndroidHiltExtractor, AndroidManifestExtractor, AndroidResourceRefExtractor,
-    AndroidRoomExtractor,
+    extract_calls_with_resolution, AndroidHiltExtractor, AndroidManifestExtractor,
+    AndroidResourceLinker, AndroidResourceRefExtractor, AndroidRoomExtractor,
+    GradleModuleExtractor, KotlinAnnotationExtractor,
 };
 use std::fs;
+use tree_sitter::Parser;
 
 const TV_APP_DIR: &str = "tests/fixtures/complex_scenarios/tv_app";
 
@@ -267,4 +269,110 @@ fn test_resource_references_in_ui() {
     for rel in &relationships {
         assert!(!rel.rel_type.is_empty(), "Relationship should have type");
     }
+}
+
+#[test]
+fn test_kotlin_annotation_extraction() {
+    let fragment_path = format!(
+        "{}/src/main/java/com/tv/app/ui/browse/BrowseFragment.kt",
+        TV_APP_DIR
+    );
+    let source = fs::read_to_string(&fragment_path).expect("Fragment not found");
+
+    let mut parser = Parser::new();
+    let lang: tree_sitter::Language = tree_sitter_kotlin_ng::LANGUAGE.into();
+    parser.set_language(&lang).ok();
+    let tree = parser.parse(&source, None).expect("Parse failed");
+
+    let extractor = KotlinAnnotationExtractor::new(source.as_bytes(), &fragment_path);
+    let (elements, relationships) = extractor.extract(&tree);
+
+    // Verify extraction runs without panics
+    for elem in &elements {
+        assert!(!elem.qualified_name.is_empty());
+        assert!(!elem.element_type.is_empty());
+    }
+    for rel in &relationships {
+        assert!(!rel.rel_type.is_empty());
+    }
+}
+
+#[test]
+fn test_resource_linker_extraction() {
+    // Use BrowseFragment which has layout inflation patterns
+    let fragment_path = format!(
+        "{}/src/main/java/com/tv/app/ui/browse/BrowseFragment.kt",
+        TV_APP_DIR
+    );
+    let source = fs::read_to_string(&fragment_path).expect("Fragment not found");
+
+    let linker = AndroidResourceLinker::new(source.as_bytes(), &fragment_path);
+    let (_, relationships) = linker.extract();
+
+    // Verify relationships are valid
+    for rel in &relationships {
+        assert!(!rel.rel_type.is_empty());
+        assert!(!rel.target_qualified.is_empty());
+    }
+}
+
+#[test]
+fn test_call_graph_resolution() {
+    let fragment_path = format!(
+        "{}/src/main/java/com/tv/app/ui/browse/BrowseFragment.kt",
+        TV_APP_DIR
+    );
+    let source = fs::read_to_string(&fragment_path).expect("Fragment not found");
+
+    let mut parser = Parser::new();
+    let lang: tree_sitter::Language = tree_sitter_kotlin_ng::LANGUAGE.into();
+    parser.set_language(&lang).ok();
+    let tree = parser.parse(&source, None).expect("Parse failed");
+
+    let calls = extract_calls_with_resolution(&tree, source.as_bytes(), &fragment_path, "kotlin");
+
+    // Verify calls have valid structure
+    for call in &calls {
+        assert!(!call.source_qualified.is_empty());
+        assert!(!call.target_qualified.is_empty());
+        assert!(!call.rel_type.is_empty());
+    }
+}
+
+#[test]
+fn test_gradle_module_extractor() {
+    let build_gradle = format!("{}/build.gradle.kts", TV_APP_DIR);
+    let source = match fs::read_to_string(&build_gradle) {
+        Ok(s) => s,
+        Err(_) => {
+            // Gradle file may not exist in fixture
+            return;
+        }
+    };
+
+    let extractor = GradleModuleExtractor::new(source.as_bytes(), &build_gradle);
+    let (_, relationships) = extractor.extract();
+
+    for rel in &relationships {
+        assert!(!rel.rel_type.is_empty());
+    }
+}
+
+#[test]
+fn test_android_resource_refs_dedup() {
+    // Test that duplicate resource references are deduplicated
+    let source = r#"
+        val title = getString(R.string.app_name)
+        val desc = resources.getString(R.string.app_name)
+    "#;
+    let extractor = AndroidResourceRefExtractor::new(source.as_bytes(), "./Test.kt");
+    let (_, relationships) = extractor.extract();
+
+    let string_refs: Vec<_> = relationships
+        .iter()
+        .filter(|r| r.rel_type == "uses_string_resource")
+        .collect();
+
+    // Should deduplicate to one relationship
+    assert_eq!(string_refs.len(), 1);
 }
