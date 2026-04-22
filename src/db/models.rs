@@ -46,6 +46,12 @@ pub enum RelationshipType {
     UsesViewBinding,
     DependsOnModule,
     UsesLibrary,
+    NavigatesTo,
+    NavAction,
+    ProvidesArg,
+    RequiresArg,
+    DeepLink,
+    Presents,
 }
 
 impl RelationshipType {
@@ -93,6 +99,12 @@ impl RelationshipType {
             RelationshipType::UsesViewBinding => "uses_viewbinding",
             RelationshipType::DependsOnModule => "depends_on_module",
             RelationshipType::UsesLibrary => "uses_library",
+            RelationshipType::NavigatesTo => "navigates_to",
+            RelationshipType::NavAction => "nav_action",
+            RelationshipType::ProvidesArg => "provides_arg",
+            RelationshipType::RequiresArg => "requires_arg",
+            RelationshipType::DeepLink => "deep_link",
+            RelationshipType::Presents => "presents",
         }
     }
 
@@ -142,6 +154,12 @@ impl RelationshipType {
             "uses_viewbinding" => Some(RelationshipType::UsesViewBinding),
             "depends_on_module" => Some(RelationshipType::DependsOnModule),
             "uses_library" => Some(RelationshipType::UsesLibrary),
+            "navigates_to" => Some(RelationshipType::NavigatesTo),
+            "nav_action" => Some(RelationshipType::NavAction),
+            "provides_arg" => Some(RelationshipType::ProvidesArg),
+            "requires_arg" => Some(RelationshipType::RequiresArg),
+            "deep_link" => Some(RelationshipType::DeepLink),
+            "presents" => Some(RelationshipType::Presents),
             _ => None,
         }
     }
@@ -363,5 +381,17 @@ mod tests {
             Some(RelationshipType::Implementations)
         );
         assert_eq!(RelationshipType::from_str("unknown"), None);
+    }
+
+    #[test]
+    fn test_nav_relationship_types() {
+        assert_eq!(RelationshipType::NavigatesTo.as_str(), "navigates_to");
+        assert_eq!(RelationshipType::NavAction.as_str(), "nav_action");
+        assert_eq!(RelationshipType::ProvidesArg.as_str(), "provides_arg");
+        assert_eq!(RelationshipType::RequiresArg.as_str(), "requires_arg");
+        assert_eq!(RelationshipType::DeepLink.as_str(), "deep_link");
+        assert_eq!(RelationshipType::Presents.as_str(), "presents");
+        assert_eq!(RelationshipType::from_str("navigates_to"), Some(RelationshipType::NavigatesTo));
+        assert_eq!(RelationshipType::from_str("presents"), Some(RelationshipType::Presents));
     }
 }
