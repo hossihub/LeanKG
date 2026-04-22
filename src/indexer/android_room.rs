@@ -1,5 +1,16 @@
 use crate::db::models::{CodeElement, Relationship};
+use crate::indexer::kotlin_utils::find_class_body_end;
 use regex::Regex;
+use std::sync::OnceLock;
+
+static ENTITY_RE: OnceLock<Regex> = OnceLock::new();
+static DAO_RE: OnceLock<Regex> = OnceLock::new();
+static DATABASE_RE: OnceLock<Regex> = OnceLock::new();
+static FK_RE: OnceLock<Regex> = OnceLock::new();
+static ENTITIES_ARRAY_RE: OnceLock<Regex> = OnceLock::new();
+static ENTITY_CLASS_RE: OnceLock<Regex> = OnceLock::new();
+static QUERY_RE: OnceLock<Regex> = OnceLock::new();
+static FROM_RE: OnceLock<Regex> = OnceLock::new();
 
 /// Extractor for Room database patterns from Kotlin files
 pub struct AndroidRoomExtractor<'a> {
@@ -54,9 +65,9 @@ impl<'a> AndroidRoomExtractor<'a> {
 
     fn extract_entities(&self, content: &str) -> Vec<CodeElement> {
         let mut entities = Vec::new();
-        // Match @Entity annotation followed by data class
-        // Use (?s) for dotall mode, .*? for non-greedy match of annotation params
-        let re = Regex::new(r"(?s)@Entity\s*(?:\(.*?\))?\s*data\s+class\s+(\w+)").unwrap();
+        let re = ENTITY_RE.get_or_init(|| {
+            Regex::new(r"(?s)@Entity\s*(?:\(.*?\))?\s*data\s+class\s+(\w+)").unwrap()
+        });
 
         for cap in re.captures_iter(content) {
             if let Some(name_match) = cap.get(1) {
@@ -80,7 +91,8 @@ impl<'a> AndroidRoomExtractor<'a> {
 
     fn extract_daos(&self, content: &str) -> Vec<CodeElement> {
         let mut daos = Vec::new();
-        let re = Regex::new(r"@Dao\s*\n?\s*\n?(?:interface|class)\s+(\w+)").unwrap();
+        let re = DAO_RE
+            .get_or_init(|| Regex::new(r"@Dao\s*\n?\s*\n?(?:interface|class)\s+(\w+)").unwrap());
 
         for cap in re.captures_iter(content) {
             if let Some(name_match) = cap.get(1) {
@@ -104,7 +116,9 @@ impl<'a> AndroidRoomExtractor<'a> {
 
     fn extract_databases(&self, content: &str) -> Vec<CodeElement> {
         let mut databases = Vec::new();
-        let re = Regex::new(r"@Database\s*\([^)]*\)\s*\n?\s*abstract\s+class\s+(\w+)").unwrap();
+        let re = DATABASE_RE.get_or_init(|| {
+            Regex::new(r"@Database\s*\([^)]*\)\s*\n?\s*abstract\s+class\s+(\w+)").unwrap()
+        });
 
         for cap in re.captures_iter(content) {
             if let Some(name_match) = cap.get(1) {
@@ -126,42 +140,18 @@ impl<'a> AndroidRoomExtractor<'a> {
         databases
     }
 
-    /// Find the end of a class body by counting matching braces
-    ///
-    /// Uses byte indices from char_indices() which correctly handles multi-byte UTF-8
-    /// characters and is appropriate for Rust string slicing operations
-    fn find_class_body_end(content: &str, class_start: usize) -> usize {
-        let after = &content[class_start..];
-        let mut depth = 0i32;
-        let mut found_open = false;
-        for (i, ch) in after.char_indices() {
-            match ch {
-                '{' => {
-                    depth += 1;
-                    found_open = true;
-                }
-                '}' => {
-                    depth -= 1;
-                    if found_open && depth == 0 {
-                        return class_start + i + 1;
-                    }
-                }
-                _ => {}
-            }
-        }
-        content.len()
-    }
-
     fn extract_foreign_keys(&self, content: &str, entities: &[CodeElement]) -> Vec<Relationship> {
         let mut relationships = Vec::new();
-        let fk_re = Regex::new(r"ForeignKey\s*\(\s*entity\s*=\s*(\w+)::class[^)]+parentColumns\s*=\s*\[(\w+)\][^)]+childColumns\s*=\s*\[(\w+)\]").unwrap();
+        let fk_re = FK_RE.get_or_init(|| {
+            Regex::new(r"ForeignKey\s*\(\s*entity\s*=\s*(\w+)::class[^)]+parentColumns\s*=\s*\[(\w+)\][^)]+childColumns\s*=\s*\[(\w+)\]").unwrap()
+        });
 
         for entity in entities {
             let entity_pattern = format!(r"(?:data\s+)?class\s+{}", regex::escape(&entity.name));
             if let Ok(re) = Regex::new(&entity_pattern) {
                 if let Some(mat) = re.find(content) {
                     let entity_start = mat.start();
-                    let entity_end = Self::find_class_body_end(content, entity_start);
+                    let entity_end = find_class_body_end(content, entity_start);
                     let entity_content = &content[entity_start..entity_end];
 
                     for cap in fk_re.captures_iter(entity_content) {
@@ -195,9 +185,9 @@ impl<'a> AndroidRoomExtractor<'a> {
     ) -> Vec<Relationship> {
         let mut relationships = Vec::new();
 
-        // Parse entities array from @Database annotation
-        let entities_array_re = Regex::new(r"entities\s*=\s*\[([^\]]+)\]").unwrap();
-        let entity_class_re = Regex::new(r"(\w+)::class").unwrap();
+        let entities_array_re =
+            ENTITIES_ARRAY_RE.get_or_init(|| Regex::new(r"entities\s*=\s*\[([^\]]+)\]").unwrap());
+        let entity_class_re = ENTITY_CLASS_RE.get_or_init(|| Regex::new(r"(\w+)::class").unwrap());
 
         for db in databases {
             // Find entities in database annotation
@@ -242,8 +232,9 @@ impl<'a> AndroidRoomExtractor<'a> {
         }
 
         // Extract DAO queries (look for @Query annotation with entity names)
-        let query_re = Regex::new(r#"@Query\s*\(\s*"([^"]+)"\s*\)"#).unwrap();
-        let from_re = Regex::new(r"(?i)FROM\s+(\w+)").unwrap();
+        let query_re =
+            QUERY_RE.get_or_init(|| Regex::new(r#"@Query\s*\(\s*"([^"]+)"\s*\)"#).unwrap());
+        let from_re = FROM_RE.get_or_init(|| Regex::new(r"(?i)FROM\s+(\w+)").unwrap());
         for dao in daos {
             for cap in query_re.captures_iter(content) {
                 if let Some(query) = cap.get(1) {

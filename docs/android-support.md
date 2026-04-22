@@ -188,6 +188,7 @@ indexer:
 - Some complex Kotlin generics may not be fully extracted
 - Hilt injection into abstract classes may not be detected
 - Custom Room annotations beyond @Entity/@Dao/@Database not tracked
+- **Generic XML extraction** only captures the root element name; child elements, attributes, and full structure are not extracted
 
 ## Examples
 

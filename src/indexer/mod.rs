@@ -14,6 +14,7 @@ pub mod android_room;
 pub mod config_extractor;
 pub mod framework_detector;
 pub mod gradle_extractor;
+pub mod kotlin_utils;
 pub mod maven_extractor;
 pub mod xml_generic;
 pub mod xml_layout;

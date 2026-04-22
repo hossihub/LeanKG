@@ -1,5 +1,13 @@
 use crate::db::models::{CodeElement, Relationship};
 use regex::Regex;
+use std::sync::OnceLock;
+
+static ANDROID_NAME_RE: OnceLock<Regex> = OnceLock::new();
+static INTENT_FILTER_RE: OnceLock<Regex> = OnceLock::new();
+static ACTION_RE: OnceLock<Regex> = OnceLock::new();
+static CATEGORY_RE: OnceLock<Regex> = OnceLock::new();
+static METADATA_RE: OnceLock<Regex> = OnceLock::new();
+static APPLICATION_CLASS_RE: OnceLock<Regex> = OnceLock::new();
 
 pub struct AndroidManifestExtractor<'a> {
     source: &'a [u8],
@@ -39,7 +47,7 @@ impl<'a> AndroidManifestExtractor<'a> {
 
         for (tag, elem_type) in &component_tags {
             for cap in Self::extract_tags(content, tag) {
-                if let Some(name) = Self::extract_android_name(&cap, tag) {
+                if let Some(name) = Self::extract_android_name(&cap) {
                     let comp_id = format!("__android__{}__{}", tag, name.replace(['.', '$'], "_"));
 
                     elements.push(CodeElement {
@@ -67,7 +75,7 @@ impl<'a> AndroidManifestExtractor<'a> {
         }
 
         if let Some(app_name) = Self::extract_tag_content(content, "application") {
-            if let Some(name) = Self::extract_android_name(&app_name, "application") {
+            if let Some(name) = Self::extract_android_name(&app_name) {
                 let app_id = format!("__android__application__{}", name.replace(['.', '$'], "_"));
                 elements.push(CodeElement {
                     qualified_name: app_id,
@@ -81,7 +89,7 @@ impl<'a> AndroidManifestExtractor<'a> {
         }
 
         for cap in Self::extract_tags(content, "uses-permission") {
-            if let Some(name) = Self::extract_android_name(&cap, "uses-permission") {
+            if let Some(name) = Self::extract_android_name(&cap) {
                 let perm_id = format!("__android__permission__{}", name.replace(['.', ':'], "_"));
 
                 elements.push(CodeElement {
@@ -105,7 +113,7 @@ impl<'a> AndroidManifestExtractor<'a> {
         }
 
         for cap in Self::extract_tags(content, "uses-feature") {
-            if let Some(name) = Self::extract_android_name(&cap, "uses-feature") {
+            if let Some(name) = Self::extract_android_name(&cap) {
                 let feature_id = format!("__android__feature__{}", name.replace([':', '-'], "_"));
 
                 elements.push(CodeElement {
@@ -218,8 +226,9 @@ impl<'a> AndroidManifestExtractor<'a> {
             .map(|m| m.as_str().to_string())
     }
 
-    fn extract_android_name(tag_content: &str, _tag_name: &str) -> Option<String> {
-        let re = Regex::new(r#"android:name\s*=\s*["']([^"']+)["']"#).ok()?;
+    fn extract_android_name(tag_content: &str) -> Option<String> {
+        let re = ANDROID_NAME_RE
+            .get_or_init(|| Regex::new(r#"android:name\s*=\s*["']([^"']+)["']"#).unwrap());
         re.captures(tag_content)
             .and_then(|cap| cap.get(1))
             .map(|m| m.as_str().to_string())
@@ -228,10 +237,14 @@ impl<'a> AndroidManifestExtractor<'a> {
     /// Extract intent filters with actions, categories, and data
     pub fn extract_intent_filters(content: &str) -> Vec<(String, Vec<String>, Vec<String>)> {
         let mut filters = Vec::new();
-        // (?s) enables dotall mode so . matches newlines for multiline intent-filters
-        let filter_re = Regex::new(r"(?s)<intent-filter[^>]*>(.*?)</intent-filter>").unwrap();
-        let action_re = Regex::new(r#"<action\s+android:name\s*=\s*["']([^"']+)["']"#).unwrap();
-        let category_re = Regex::new(r#"<category\s+android:name\s*=\s*["']([^"']+)["']"#).unwrap();
+        let filter_re = INTENT_FILTER_RE
+            .get_or_init(|| Regex::new(r"(?s)<intent-filter[^>]*>(.*?)</intent-filter>").unwrap());
+        let action_re = ACTION_RE.get_or_init(|| {
+            Regex::new(r#"<action\s+android:name\s*=\s*["']([^"']+)["']"#).unwrap()
+        });
+        let category_re = CATEGORY_RE.get_or_init(|| {
+            Regex::new(r#"<category\s+android:name\s*=\s*["']([^"']+)["']"#).unwrap()
+        });
 
         for cap in filter_re.captures_iter(content) {
             if let Some(filter_content) = cap.get(1) {
@@ -259,7 +272,9 @@ impl<'a> AndroidManifestExtractor<'a> {
     /// Extract meta-data elements
     pub fn extract_metadata(content: &str) -> Vec<(String, Option<String>, Option<String>)> {
         let mut metadata = Vec::new();
-        let re = Regex::new(r#"<meta-data\s+android:name\s*=\s*["']([^"']+)["'](?:\s+android:value\s*=\s*["']([^"']+)["'])?(?:\s+android:resource\s*=\s*["']([^"']+)["'])?"#).unwrap();
+        let re = METADATA_RE.get_or_init(|| {
+            Regex::new(r#"<meta-data\s+android:name\s*=\s*["']([^"']+)["'](?:\s+android:value\s*=\s*["']([^"']+)["'])?(?:\s+android:resource\s*=\s*["']([^"']+)["'])?"#).unwrap()
+        });
 
         for cap in re.captures_iter(content) {
             let name = cap.get(1).map(|m| m.as_str().to_string());
@@ -276,7 +291,9 @@ impl<'a> AndroidManifestExtractor<'a> {
 
     /// Extract application class name from manifest
     pub fn extract_application_class(content: &str) -> Option<String> {
-        let re = Regex::new(r#"<application[^>]*android:name\s*=\s*["']([^"']+)["']"#).unwrap();
+        let re = APPLICATION_CLASS_RE.get_or_init(|| {
+            Regex::new(r#"<application[^>]*android:name\s*=\s*["']([^"']+)["']"#).unwrap()
+        });
         re.captures(content)
             .and_then(|cap| cap.get(1))
             .map(|m| m.as_str().to_string())

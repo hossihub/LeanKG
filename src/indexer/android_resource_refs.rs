@@ -1,5 +1,9 @@
 use crate::db::models::{CodeElement, Relationship};
 use regex::Regex;
+use std::sync::OnceLock;
+
+static R_REF_RE: OnceLock<Regex> = OnceLock::new();
+static RESOURCE_METHOD_RE: OnceLock<Regex> = OnceLock::new();
 
 /// Extractor for Android resource references in Kotlin code
 /// Detects R.string.xxx, R.drawable.xxx, R.layout.xxx patterns
@@ -31,14 +35,17 @@ impl<'a> AndroidResourceRefExtractor<'a> {
         let method_refs = self.extract_resource_methods(content);
         relationships.extend(method_refs);
 
+        // Dedup by (rel_type, target_qualified) — both extractors may match the same reference
+        let mut seen = std::collections::HashSet::new();
+        relationships.retain(|r| seen.insert((r.rel_type.clone(), r.target_qualified.clone())));
+
         (Vec::new(), relationships)
     }
 
     fn extract_r_references(&self, content: &str) -> Vec<Relationship> {
         let mut relationships = Vec::new();
 
-        // Pattern: R.<type>.<name>
-        let re = Regex::new(r"R\.(\w+)\.(\w+)").unwrap();
+        let re = R_REF_RE.get_or_init(|| Regex::new(r"R\.(\w+)\.(\w+)").unwrap());
 
         for cap in re.captures_iter(content) {
             if let (Some(type_match), Some(name_match)) = (cap.get(1), cap.get(2)) {
@@ -80,9 +87,10 @@ impl<'a> AndroidResourceRefExtractor<'a> {
     fn extract_resource_methods(&self, content: &str) -> Vec<Relationship> {
         let mut relationships = Vec::new();
 
-        // Pattern: resources.getString(R.string.xxx) or getString(R.string.xxx)
-        let re = Regex::new(r"(?:resources\.)?(?:getString|getText)\s*\(\s*R\.(\w+)\.(\w+)\s*\)")
-            .unwrap();
+        let re = RESOURCE_METHOD_RE.get_or_init(|| {
+            Regex::new(r"(?:resources\.)?(?:getString|getText)\s*\(\s*R\.(\w+)\.(\w+)\s*\)")
+                .unwrap()
+        });
 
         for cap in re.captures_iter(content) {
             if let (Some(type_match), Some(name_match)) = (cap.get(1), cap.get(2)) {
@@ -148,10 +156,10 @@ mod tests {
             .iter()
             .filter(|r| r.rel_type == "uses_string_resource")
             .collect();
-        // May find duplicates from both R. and resources.method patterns
-        assert!(
-            string_refs.len() >= 2,
-            "Expected at least 2 string refs, found {}",
+        assert_eq!(
+            string_refs.len(),
+            2,
+            "Expected exactly 2 string refs (one per occurrence), found {}",
             string_refs.len()
         );
         assert!(string_refs

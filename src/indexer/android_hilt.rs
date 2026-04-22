@@ -1,5 +1,13 @@
 use crate::db::models::{CodeElement, Relationship};
+use crate::indexer::kotlin_utils::find_class_body_end;
 use regex::Regex;
+use std::sync::OnceLock;
+
+static MODULE_RE: OnceLock<Regex> = OnceLock::new();
+static PROVIDES_RE: OnceLock<Regex> = OnceLock::new();
+static INJECT_RE: OnceLock<Regex> = OnceLock::new();
+static PARAM_RE: OnceLock<Regex> = OnceLock::new();
+static FIELD_INJECT_RE: OnceLock<Regex> = OnceLock::new();
 
 /// Extractor for Hilt dependency injection patterns from Kotlin files
 pub struct AndroidHiltExtractor<'a> {
@@ -45,8 +53,9 @@ impl<'a> AndroidHiltExtractor<'a> {
 
     fn extract_modules(&self, content: &str) -> Vec<CodeElement> {
         let mut modules = Vec::new();
-        // Match @Module with @InstallIn - handles both class and object
-        let re = Regex::new(r"(?s)@Module\s*\n?\s*(?:@InstallIn\(.*?\)\s*\n?\s*)?(?:abstract\s+)?(?:class|object)\s+(\w+)").unwrap();
+        let re = MODULE_RE.get_or_init(|| {
+            Regex::new(r"(?s)@Module\s*\n?\s*(?:@InstallIn\(.*?\)\s*\n?\s*)?(?:abstract\s+)?(?:class|object)\s+(\w+)").unwrap()
+        });
 
         for cap in re.captures_iter(content) {
             if let Some(name_match) = cap.get(1) {
@@ -68,32 +77,6 @@ impl<'a> AndroidHiltExtractor<'a> {
         modules
     }
 
-    /// Find the end of a class body by counting matching braces
-    ///
-    /// Uses byte indices from char_indices() which correctly handles multi-byte UTF-8
-    /// characters and is appropriate for Rust string slicing operations
-    fn find_class_body_end(content: &str, class_start: usize) -> usize {
-        let after = &content[class_start..];
-        let mut depth = 0i32;
-        let mut found_open = false;
-        for (i, ch) in after.char_indices() {
-            match ch {
-                '{' => {
-                    depth += 1;
-                    found_open = true;
-                }
-                '}' => {
-                    depth -= 1;
-                    if found_open && depth == 0 {
-                        return class_start + i + 1;
-                    }
-                }
-                _ => {}
-            }
-        }
-        content.len()
-    }
-
     fn extract_providers(
         &self,
         content: &str,
@@ -102,22 +85,27 @@ impl<'a> AndroidHiltExtractor<'a> {
         let mut providers = Vec::new();
         let mut relationships = Vec::new();
 
-        // Build module body spans so each provider is attributed to its containing module
-        let module_re = Regex::new(r"(?s)@Module\s*\n?\s*(?:@InstallIn\(.*?\)\s*\n?\s*)?(?:abstract\s+)?(?:class|object)\s+\w+").unwrap();
+        // Build module body spans by matching each module element by name — avoids zip fragility
+        let module_name_re_str = r"(?s)@Module[^{]*?(?:class|object)\s+MODNAME\b";
         let module_spans: Vec<(&CodeElement, usize, usize)> = modules
             .iter()
-            .zip(module_re.find_iter(content))
-            .map(|(module, mat)| {
-                let start = mat.start();
-                let end = Self::find_class_body_end(content, start);
-                (module, start, end)
+            .filter_map(|module| {
+                let pattern = module_name_re_str.replace("MODNAME", &regex::escape(&module.name));
+                Regex::new(&pattern).ok().and_then(|re| {
+                    re.find(content).map(|mat| {
+                        let end = find_class_body_end(content, mat.start());
+                        (module, mat.start(), end)
+                    })
+                })
             })
             .collect();
 
-        let provides_re = Regex::new(
-            r"@Provides\s*\n?(?:@Singleton\s*\n?)?\s*fun\s+(\w+)\s*\([^)]*\)\s*:\s*(\w+)",
-        )
-        .unwrap();
+        let provides_re = PROVIDES_RE.get_or_init(|| {
+            Regex::new(
+                r"@Provides\s*\n?(?:@Singleton\s*\n?)?\s*fun\s+(\w+)\s*\([^)]*\)\s*:\s*(\w+)",
+            )
+            .unwrap()
+        });
 
         for cap in provides_re.captures_iter(content) {
             let method_match = cap.get(1);
@@ -174,9 +162,10 @@ impl<'a> AndroidHiltExtractor<'a> {
     fn extract_injections(&self, content: &str) -> Vec<Relationship> {
         let mut relationships = Vec::new();
 
-        let inject_re =
-            Regex::new(r"class\s+(\w+).*?@Inject\s*\n?\s*constructor\s*\(([^)]+)\)").unwrap();
-        let param_re = Regex::new(r"(\w+)\s*:\s*(\w+)").unwrap();
+        let inject_re = INJECT_RE.get_or_init(|| {
+            Regex::new(r"class\s+(\w+).*?@Inject\s*\n?\s*constructor\s*\(([^)]+)\)").unwrap()
+        });
+        let param_re = PARAM_RE.get_or_init(|| Regex::new(r"(\w+)\s*:\s*(\w+)").unwrap());
 
         for cap in inject_re.captures_iter(content) {
             let class_match = cap.get(1);
@@ -205,8 +194,9 @@ impl<'a> AndroidHiltExtractor<'a> {
         }
 
         // Match @Inject field injection
-        let field_inject_re =
-            Regex::new(r"@Inject\s*\n?\s*(?:lateinit\s+)?var\s+(\w+)\s*:\s*(\w+)").unwrap();
+        let field_inject_re = FIELD_INJECT_RE.get_or_init(|| {
+            Regex::new(r"@Inject\s*\n?\s*(?:lateinit\s+)?var\s+(\w+)\s*:\s*(\w+)").unwrap()
+        });
         for cap in field_inject_re.captures_iter(content) {
             let name_match = cap.get(1);
             let type_match = cap.get(2);

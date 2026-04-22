@@ -40,6 +40,7 @@ impl Default for MicroserviceExtractorConfig {
 pub struct ProjectSettings {
     pub name: String,
     pub root: PathBuf,
+    #[serde(skip_serializing, default)]
     pub project_path: Option<PathBuf>,
     pub languages: Vec<String>,
 }

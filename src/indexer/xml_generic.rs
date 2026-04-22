@@ -1,19 +1,26 @@
 use crate::db::models::{CodeElement, Relationship};
 use regex::Regex;
+use std::sync::OnceLock;
+
+static ROOT_ELEMENT_RE: OnceLock<Regex> = OnceLock::new();
 
 /// Extractor for generic XML files (non-Android specific)
+///
+/// # Limitations
+/// This extractor only captures the root element name from XML files.
+/// Child elements, attributes, and the full document structure are not extracted.
+/// For Android-specific XML files (AndroidManifest.xml, resources in /res/),
+/// use the specialized Android extractors instead.
 pub struct GenericXmlExtractor<'a> {
     source: &'a [u8],
     file_path: &'a str,
 }
 
 impl<'a> GenericXmlExtractor<'a> {
-    /// Create a new GenericXmlExtractor
     pub fn new(source: &'a [u8], file_path: &'a str) -> Self {
         Self { source, file_path }
     }
 
-    /// Extract code elements and relationships from XML file
     pub fn extract(&self) -> (Vec<CodeElement>, Vec<Relationship>) {
         let mut elements = Vec::new();
         let mut relationships = Vec::new();
@@ -25,11 +32,9 @@ impl<'a> GenericXmlExtractor<'a> {
 
         match std::str::from_utf8(self.source) {
             Ok(content) => {
-                // Detect root element name via regex
                 let root_element = Self::detect_root_element(content);
 
                 if !root_element.is_empty() {
-                    // Create a CodeElement for the XML document structure
                     elements.push(CodeElement {
                         qualified_name: format!("{}::{}", self.file_path, root_element),
                         element_type: "XMLDocument".to_string(),
@@ -38,7 +43,6 @@ impl<'a> GenericXmlExtractor<'a> {
                         ..Default::default()
                     });
 
-                    // Create relationships for XML structure if it has children
                     let mut lines = content.lines();
                     if let Some(first_line) = lines.next() {
                         let first_tag_start = first_line.find('<').unwrap_or(0);
@@ -51,7 +55,7 @@ impl<'a> GenericXmlExtractor<'a> {
                                 target_qualified: format!(
                                     "{}::{}",
                                     self.file_path,
-                                    &content[first_tag_start..first_tag_end]
+                                    &first_line[first_tag_start..first_tag_end]
                                 ),
                                 rel_type: "has_root".to_string(),
                                 confidence: 1.0,
@@ -62,7 +66,6 @@ impl<'a> GenericXmlExtractor<'a> {
                 }
             }
             Err(_) => {
-                // Skip files that can't be decoded as UTF-8
                 return (elements, relationships);
             }
         }
@@ -70,16 +73,13 @@ impl<'a> GenericXmlExtractor<'a> {
         (elements, relationships)
     }
 
-    /// Check if this is an Android-specific XML file
     fn is_android_xml(&self) -> bool {
         let path_lower = self.file_path.to_lowercase();
 
-        // Check for AndroidManifest.xml
         if path_lower.contains("androidmanifest.xml") {
             return true;
         }
 
-        // Check for files in /res/ directory (Android resources)
         if path_lower.contains("/res/") || path_lower.contains("\\res\\") {
             return true;
         }
@@ -87,10 +87,8 @@ impl<'a> GenericXmlExtractor<'a> {
         false
     }
 
-    /// Detect the root element name from XML content using regex
     fn detect_root_element(content: &str) -> String {
-        // Match opening tag of root element (handles self-closing tags too)
-        let re = Regex::new(r"<(\w+)(?:\s|>|/>)").unwrap();
+        let re = ROOT_ELEMENT_RE.get_or_init(|| Regex::new(r"<(\w+)(?:\s|>|/>)").unwrap());
 
         if let Some(caps) = re.captures(content) {
             if let Some(tag_name) = caps.get(1) {

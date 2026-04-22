@@ -1,7 +1,7 @@
 //! XML extraction tests
 //! Tests extraction of Android XML patterns from fixture files
 
-use leankg::indexer::AndroidManifestExtractor;
+use leankg::indexer::{AndroidManifestExtractor, GenericXmlExtractor};
 use std::fs;
 
 const XML_FIXTURES_DIR: &str = "tests/fixtures/android_xml";
@@ -270,4 +270,122 @@ fn test_styles_extraction() {
         content.contains("Theme.Leanback"),
         "Should reference Leanback theme"
     );
+}
+
+// Generic XML extraction tests
+#[test]
+fn test_generic_xml_extraction_root_element() {
+    let content = r#"<configuration>
+        <server>localhost</server>
+        <port>8080</port>
+    </configuration>"#;
+
+    let extractor = GenericXmlExtractor::new(content.as_bytes(), "config.xml");
+    let (elements, relationships) = extractor.extract();
+
+    // Should have one XMLDocument element for root
+    assert_eq!(elements.len(), 1, "Expected 1 XMLDocument element");
+    assert_eq!(elements[0].element_type, "XMLDocument");
+    assert!(
+        elements[0].name.contains("configuration"),
+        "Root element should be 'configuration'"
+    );
+
+    // Should have has_root relationship
+    assert_eq!(relationships.len(), 1, "Expected 1 relationship");
+    assert_eq!(relationships[0].rel_type, "has_root");
+}
+
+#[test]
+fn test_generic_xml_exclusion_of_android_files() {
+    // AndroidManifest.xml should be skipped
+    let content = r#"<manifest package="com.test"/>"#;
+    let extractor = GenericXmlExtractor::new(content.as_bytes(), "AndroidManifest.xml");
+    let (elements, relationships) = extractor.extract();
+
+    assert!(elements.is_empty(), "AndroidManifest should be excluded");
+    assert!(
+        relationships.is_empty(),
+        "No relationships for Android files"
+    );
+
+    // Files in /res/ should be skipped
+    let extractor2 = GenericXmlExtractor::new(content.as_bytes(), "/res/layout/main.xml");
+    let (elements2, relationships2) = extractor2.extract();
+
+    assert!(elements2.is_empty(), "Files in /res/ should be excluded");
+    assert!(
+        relationships2.is_empty(),
+        "No relationships for Android resource files"
+    );
+}
+
+#[test]
+fn test_generic_xml_with_xml_declaration() {
+    let content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+    <theme>dark</theme>
+</settings>"#;
+
+    let extractor = GenericXmlExtractor::new(content.as_bytes(), "settings.xml");
+    let (elements, _) = extractor.extract();
+
+    assert_eq!(elements.len(), 1);
+    assert!(elements[0].qualified_name.contains("settings"));
+}
+
+#[test]
+fn test_generic_xml_self_closing_tag() {
+    let content = r#"<config enabled="true"/>"#;
+
+    let extractor = GenericXmlExtractor::new(content.as_bytes(), "config.xml");
+    let (elements, relationships) = extractor.extract();
+
+    assert_eq!(elements.len(), 1);
+    assert_eq!(elements[0].name, "config");
+    // Self-closing tags still create has_root relationship
+    assert_eq!(relationships.len(), 1);
+}
+
+#[test]
+fn test_generic_xml_empty_content() {
+    let content = "";
+    let extractor = GenericXmlExtractor::new(content.as_bytes(), "empty.xml");
+    let (elements, relationships) = extractor.extract();
+
+    assert!(
+        elements.is_empty(),
+        "Empty content should produce no elements"
+    );
+    assert!(
+        relationships.is_empty(),
+        "Empty content should produce no relationships"
+    );
+}
+
+#[test]
+fn test_generic_xml_invalid_utf8() {
+    // Invalid UTF-8 bytes
+    let invalid_bytes = vec![0x80, 0x81, 0x82];
+    let extractor = GenericXmlExtractor::new(&invalid_bytes, "binary.xml");
+    let (elements, relationships) = extractor.extract();
+
+    assert!(
+        elements.is_empty(),
+        "Invalid UTF-8 should produce no elements"
+    );
+    assert!(
+        relationships.is_empty(),
+        "Invalid UTF-8 should produce no relationships"
+    );
+}
+
+#[test]
+fn test_generic_xml_preserves_file_path() {
+    let content = r#"<root/>"#;
+    let extractor = GenericXmlExtractor::new(content.as_bytes(), "path/to/config.xml");
+    let (elements, _) = extractor.extract();
+
+    assert_eq!(elements[0].file_path, "path/to/config.xml");
+    assert!(elements[0].qualified_name.starts_with("path/to/config.xml"));
 }
