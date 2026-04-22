@@ -3,7 +3,6 @@ use regex::Regex;
 use std::sync::OnceLock;
 
 static FRAGMENT_REPLACE_RE: OnceLock<Regex> = OnceLock::new();
-static _FRAGMENT_ADD_RE: OnceLock<Regex> = OnceLock::new();
 static BACKSTACK_RE: OnceLock<Regex> = OnceLock::new();
 static START_ACTIVITY_RE: OnceLock<Regex> = OnceLock::new();
 static NAV_CONTROLLER_RE: OnceLock<Regex> = OnceLock::new();

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 #![allow(clippy::regex_creation_in_loops)]
 
 use crate::db::models::{CodeElement, Relationship};
