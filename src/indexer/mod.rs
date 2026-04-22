@@ -8,7 +8,9 @@ pub mod terraform;
 
 pub mod android_hilt;
 pub mod android_manifest;
+pub mod android_nav_fragments;
 pub mod android_nav_jetpack;
+pub mod android_nav_leanback;
 pub mod android_nav_model;
 pub mod android_resource_linker;
 pub mod android_resource_refs;
@@ -29,6 +31,9 @@ pub use android_hilt::AndroidHiltExtractor;
 pub use android_manifest::*;
 pub use android_resource_linker::AndroidResourceLinker;
 pub use android_resource_refs::AndroidResourceRefExtractor;
+pub use android_nav_fragments::FragmentNavExtractor;
+pub use android_nav_jetpack::JetpackNavExtractor;
+pub use android_nav_leanback::LeanbackNavExtractor;
 pub use android_resources::*;
 pub use android_room::AndroidRoomExtractor;
 #[allow(unused_imports)]
