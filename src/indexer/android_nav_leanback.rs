@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(clippy::regex_creation_in_loops)]
+
 use crate::db::models::{CodeElement, Relationship};
 use regex::Regex;
 use std::sync::OnceLock;
@@ -5,6 +8,7 @@ use std::sync::OnceLock;
 static BROWSE_FRAGMENT_RE: OnceLock<Regex> = OnceLock::new();
 static ITEM_CLICKED_RE: OnceLock<Regex> = OnceLock::new();
 static DETAILS_ACTIVITY_RE: OnceLock<Regex> = OnceLock::new();
+static FRAGMENT_RE: OnceLock<Regex> = OnceLock::new();
 
 pub struct LeanbackNavExtractor<'a> {
     source: &'a [u8],
@@ -25,6 +29,13 @@ impl<'a> LeanbackNavExtractor<'a> {
         let browse_re = BROWSE_FRAGMENT_RE.get_or_init(|| {
             Regex::new(r"class\s+(\w+)\s*:\s*(?:BrowseSupportFragment|BrowseFragment|VerticalGridSupportFragment)\s*\(").unwrap()
         });
+        let details_re = DETAILS_ACTIVITY_RE.get_or_init(|| {
+            Regex::new(r"startActivity\s*\(\s*Intent\s*\([^,]+,\s*(\w+Activity)::class\.java\s*\)")
+                .unwrap()
+        });
+        let item_clicked_re =
+            ITEM_CLICKED_RE.get_or_init(|| Regex::new(r"setOnItemViewClickedListener\b").unwrap());
+        let frag_re = FRAGMENT_RE.get_or_init(|| Regex::new(r"(\w+Fragment)\s*\(").unwrap());
 
         let mut elements = Vec::new();
         let mut relationships = Vec::new();
@@ -47,10 +58,6 @@ impl<'a> LeanbackNavExtractor<'a> {
                     ..Default::default()
                 });
 
-                let details_re = DETAILS_ACTIVITY_RE.get_or_init(|| {
-                    Regex::new(r"startActivity\s*\(\s*Intent\s*\([^,]+,\s*(\w+Activity)::class\.java\s*\)").unwrap()
-                });
-
                 for dcap in details_re.captures_iter(content) {
                     if let Some(activity_match) = dcap.get(1) {
                         let activity_name = activity_match.as_str();
@@ -68,12 +75,7 @@ impl<'a> LeanbackNavExtractor<'a> {
                     }
                 }
 
-                let item_clicked_re = ITEM_CLICKED_RE.get_or_init(|| {
-                    Regex::new(r"setOnItemViewClickedListener\b").unwrap()
-                });
-
                 if item_clicked_re.is_match(content) {
-                    let frag_re = Regex::new(r"(\w+Fragment)\s*\(").unwrap();
                     let listener_pos = item_clicked_re
                         .find(content)
                         .map(|m| m.start())
@@ -137,9 +139,7 @@ class MainFragment : BrowseSupportFragment() {
             .filter(|r| r.rel_type == "presents")
             .collect();
         assert!(!nav_rels.is_empty(), "Should find presents relationship");
-        assert!(nav_rels[0]
-            .target_qualified
-            .contains("DetailsActivity"));
+        assert!(nav_rels[0].target_qualified.contains("DetailsActivity"));
     }
 
     #[test]
@@ -152,7 +152,10 @@ class RegularFragment : Fragment() {
         let extractor = LeanbackNavExtractor::new(source.as_bytes(), "ui/RegularFragment.kt");
         let (elements, relationships) = extractor.extract();
 
-        assert!(elements.is_empty(), "Non-leanback fragment should produce no elements");
+        assert!(
+            elements.is_empty(),
+            "Non-leanback fragment should produce no elements"
+        );
         assert!(relationships.is_empty());
     }
 }

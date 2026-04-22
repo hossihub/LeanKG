@@ -29,11 +29,11 @@ pub mod xml_layout;
 
 pub use android_hilt::AndroidHiltExtractor;
 pub use android_manifest::*;
-pub use android_resource_linker::AndroidResourceLinker;
-pub use android_resource_refs::AndroidResourceRefExtractor;
 pub use android_nav_fragments::FragmentNavExtractor;
 pub use android_nav_jetpack::JetpackNavExtractor;
 pub use android_nav_leanback::LeanbackNavExtractor;
+pub use android_resource_linker::AndroidResourceLinker;
+pub use android_resource_refs::AndroidResourceRefExtractor;
 pub use android_resources::*;
 pub use android_room::AndroidRoomExtractor;
 #[allow(unused_imports)]
@@ -362,11 +362,15 @@ fn extract_elements_for_file(
         nav_relationships.extend(lnr);
 
         // JetpackNavExtractor Kotlin DSL
-        if content.windows(b"NavGraphBuilder".len()).any(|w| w == b"NavGraphBuilder")
-            || content.windows(b"composable(".len()).any(|w| w == b"composable(")
+        if content
+            .windows(b"NavGraphBuilder".len())
+            .any(|w| w == b"NavGraphBuilder")
+            || content
+                .windows(b"composable(".len())
+                .any(|w| w == b"composable(")
         {
             let nav_dsl_extractor = crate::indexer::JetpackNavExtractor::new(source, file_path);
-            let (mut ne, mut nr) = nav_dsl_extractor.extract_kotlin_dsl();
+            let (ne, nr) = nav_dsl_extractor.extract_kotlin_dsl();
             nav_elements.extend(ne);
             nav_relationships.extend(nr);
         }

@@ -460,7 +460,7 @@ impl ToolRegistry {
                     "properties": {
                         "route": {"type": "string", "description": "Route string (e.g. 'profile/{userId}') or action ID (e.g. 'action_home_to_detail')"}
                     },
-                    "required": ["route"]
+                    "required": []
                 }),
             },
             ToolDefinition {
@@ -472,7 +472,7 @@ impl ToolRegistry {
                         "destination": {"type": "string", "description": "Destination name, route, or file path"},
                         "limit": {"type": "integer", "default": 20, "description": "Maximum results"}
                     },
-                    "required": ["destination"]
+                    "required": []
                 }),
             },
             ToolDefinition {
@@ -483,7 +483,7 @@ impl ToolRegistry {
                     "properties": {
                         "destination": {"type": "string", "description": "Destination name, route, fragment class, or activity class"}
                     },
-                    "required": ["destination"]
+                    "required": []
                 }),
             },
             ToolDefinition {

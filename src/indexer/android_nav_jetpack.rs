@@ -141,7 +141,8 @@ impl<'a> JetpackNavExtractor<'a> {
                             None => continue,
                         };
                         let arg_qn = format!("{}::arg::{}", dest_qn, arg_name);
-                        let arg_type = app_attr(&sub, "argType").unwrap_or_else(|| "string".to_string());
+                        let arg_type =
+                            app_attr(&sub, "argType").unwrap_or_else(|| "string".to_string());
                         let nullable = app_attr(&sub, "nullable")
                             .map(|v| v == "true")
                             .unwrap_or(false);
@@ -291,18 +292,30 @@ mod tests {
         let extractor = JetpackNavExtractor::new(xml.as_bytes(), "res/navigation/nav_graph.xml");
         let (elements, relationships) = extractor.extract_xml();
 
-        let destinations: Vec<_> = elements.iter().filter(|e| e.element_type == "nav_destination").collect();
+        let destinations: Vec<_> = elements
+            .iter()
+            .filter(|e| e.element_type == "nav_destination")
+            .collect();
         assert_eq!(destinations.len(), 2, "Should find 2 destinations");
         assert!(destinations.iter().any(|e| e.name == "homeFragment"));
         assert!(destinations.iter().any(|e| e.name == "detailFragment"));
 
-        let actions: Vec<_> = relationships.iter().filter(|r| r.rel_type == "nav_action").collect();
+        let actions: Vec<_> = relationships
+            .iter()
+            .filter(|r| r.rel_type == "nav_action")
+            .collect();
         assert_eq!(actions.len(), 1, "Should find 1 action");
 
-        let args: Vec<_> = elements.iter().filter(|e| e.element_type == "nav_argument").collect();
+        let args: Vec<_> = elements
+            .iter()
+            .filter(|e| e.element_type == "nav_argument")
+            .collect();
         assert_eq!(args.len(), 1, "Should find 1 argument (userId)");
 
-        let deep_links: Vec<_> = relationships.iter().filter(|r| r.rel_type == "deep_link").collect();
+        let deep_links: Vec<_> = relationships
+            .iter()
+            .filter(|r| r.rel_type == "deep_link")
+            .collect();
         assert_eq!(deep_links.len(), 1, "Should find 1 deep link");
     }
 
@@ -322,10 +335,16 @@ mod tests {
         let nav_graph = elements.iter().find(|e| e.element_type == "nav_graph");
         assert!(nav_graph.is_some(), "Should have a nav_graph element");
 
-        let start = elements.iter().find(|e| e.element_type == "nav_destination" && e.name == "loginFragment");
+        let start = elements
+            .iter()
+            .find(|e| e.element_type == "nav_destination" && e.name == "loginFragment");
         assert!(start.is_some());
         assert_eq!(
-            start.unwrap().metadata.get("start_destination").and_then(|v| v.as_bool()),
+            start
+                .unwrap()
+                .metadata
+                .get("start_destination")
+                .and_then(|v| v.as_bool()),
             Some(true),
             "loginFragment should be marked as start destination"
         );

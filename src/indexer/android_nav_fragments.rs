@@ -3,7 +3,7 @@ use regex::Regex;
 use std::sync::OnceLock;
 
 static FRAGMENT_REPLACE_RE: OnceLock<Regex> = OnceLock::new();
-static FRAGMENT_ADD_RE: OnceLock<Regex> = OnceLock::new();
+static _FRAGMENT_ADD_RE: OnceLock<Regex> = OnceLock::new();
 static BACKSTACK_RE: OnceLock<Regex> = OnceLock::new();
 static START_ACTIVITY_RE: OnceLock<Regex> = OnceLock::new();
 static NAV_CONTROLLER_RE: OnceLock<Regex> = OnceLock::new();
@@ -30,9 +30,8 @@ impl<'a> FragmentNavExtractor<'a> {
             Regex::new(r"\.(?:replace|add)\s*\(\s*[^,]+,\s*(\w+Fragment)\s*\(").unwrap()
         });
 
-        let backstack_re = BACKSTACK_RE.get_or_init(|| {
-            Regex::new(r#"\.addToBackStack\s*\(\s*"([^"]+)"\s*\)"#).unwrap()
-        });
+        let backstack_re = BACKSTACK_RE
+            .get_or_init(|| Regex::new(r#"\.addToBackStack\s*\(\s*"([^"]+)"\s*\)"#).unwrap());
 
         for cap in replace_re.captures_iter(content) {
             if let Some(frag_match) = cap.get(1) {
@@ -62,7 +61,8 @@ impl<'a> FragmentNavExtractor<'a> {
         }
 
         let start_activity_re = START_ACTIVITY_RE.get_or_init(|| {
-            Regex::new(r"startActivity\s*\(\s*Intent\s*\([^,]+,\s*(\w+Activity)::class\.java\s*\)").unwrap()
+            Regex::new(r"startActivity\s*\(\s*Intent\s*\([^,]+,\s*(\w+Activity)::class\.java\s*\)")
+                .unwrap()
         });
 
         for cap in start_activity_re.captures_iter(content) {

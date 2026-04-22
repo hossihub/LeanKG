@@ -140,6 +140,7 @@ impl ToolHandler {
             "get_call_graph" => compressor.compress_call_graph(&response),
             "search_code" => compressor.compress_search_code(&response),
             "search_annotations" => compressor.compress_search_annotations(&response),
+            "get_nav_graph" => compressor.compress_nav_graph(&response),
             "get_dependencies" => compressor.compress_dependencies(&response),
             "get_dependents" => compressor.compress_dependents(&response),
             "get_context" => compressor.compress_context(&response),
@@ -1700,12 +1701,22 @@ impl ToolHandler {
         let file = args["file"].as_str();
         let graph_id = args["graph_id"].as_str();
 
-        let all_elements = self.graph_engine.all_elements().map_err(|e| e.to_string())?;
+        let all_elements = self
+            .graph_engine
+            .all_elements()
+            .map_err(|e| e.to_string())?;
 
         let nav_elements: Vec<_> = all_elements
             .iter()
             .filter(|e| {
-                let is_nav = matches!(e.element_type.as_str(), "nav_graph" | "nav_destination" | "nav_action" | "nav_argument" | "nav_deep_link");
+                let is_nav = matches!(
+                    e.element_type.as_str(),
+                    "nav_graph"
+                        | "nav_destination"
+                        | "nav_action"
+                        | "nav_argument"
+                        | "nav_deep_link"
+                );
                 if let Some(f) = file {
                     is_nav && e.file_path.contains(f)
                 } else {
@@ -1721,9 +1732,22 @@ impl ToolHandler {
             })
             .collect();
 
-        let nav_rels = self.graph_engine.all_relationships().map_err(|e| e.to_string())?
+        let nav_rels = self
+            .graph_engine
+            .all_relationships()
+            .map_err(|e| e.to_string())?
             .into_iter()
-            .filter(|r| matches!(r.rel_type.as_str(), "navigates_to" | "nav_action" | "provides_arg" | "requires_arg" | "deep_link" | "presents"))
+            .filter(|r| {
+                matches!(
+                    r.rel_type.as_str(),
+                    "navigates_to"
+                        | "nav_action"
+                        | "provides_arg"
+                        | "requires_arg"
+                        | "deep_link"
+                        | "presents"
+                )
+            })
             .collect::<Vec<_>>();
 
         Ok(json!({
@@ -1735,8 +1759,14 @@ impl ToolHandler {
     fn find_route(&self, args: &Value) -> Result<Value, String> {
         let route = args["route"].as_str().ok_or("Missing 'route' parameter")?;
 
-        let all_elements = self.graph_engine.all_elements().map_err(|e| e.to_string())?;
-        let all_rels = self.graph_engine.all_relationships().map_err(|e| e.to_string())?;
+        let all_elements = self
+            .graph_engine
+            .all_elements()
+            .map_err(|e| e.to_string())?;
+        let all_rels = self
+            .graph_engine
+            .all_relationships()
+            .map_err(|e| e.to_string())?;
 
         let destinations: Vec<_> = all_elements
             .iter()
@@ -1756,11 +1786,19 @@ impl ToolHandler {
     }
 
     fn get_screen_args(&self, args: &Value) -> Result<Value, String> {
-        let destination = args["destination"].as_str().ok_or("Missing 'destination' parameter")?;
+        let destination = args["destination"]
+            .as_str()
+            .ok_or("Missing 'destination' parameter")?;
         let limit = args["limit"].as_i64().unwrap_or(20) as usize;
 
-        let all_elements = self.graph_engine.all_elements().map_err(|e| e.to_string())?;
-        let all_rels = self.graph_engine.all_relationships().map_err(|e| e.to_string())?;
+        let all_elements = self
+            .graph_engine
+            .all_elements()
+            .map_err(|e| e.to_string())?;
+        let _all_rels = self
+            .graph_engine
+            .all_relationships()
+            .map_err(|e| e.to_string())?;
 
         let dest_elem = all_elements
             .iter()
@@ -1769,7 +1807,10 @@ impl ToolHandler {
         let args: Vec<_> = if let Some(d) = dest_elem {
             all_elements
                 .iter()
-                .filter(|e| e.element_type == "nav_argument" && e.parent_qualified.as_ref() == Some(&d.qualified_name))
+                .filter(|e| {
+                    e.element_type == "nav_argument"
+                        && e.parent_qualified.as_ref() == Some(&d.qualified_name)
+                })
                 .take(limit)
                 .cloned()
                 .collect()
@@ -1784,17 +1825,22 @@ impl ToolHandler {
     }
 
     fn get_nav_callers(&self, args: &Value) -> Result<Value, String> {
-        let destination = args["destination"].as_str().ok_or("Missing 'destination' parameter")?;
+        let destination = args["destination"]
+            .as_str()
+            .ok_or("Missing 'destination' parameter")?;
 
-        let all_rels = self.graph_engine.all_relationships().map_err(|e| e.to_string())?;
+        let all_rels = self
+            .graph_engine
+            .all_relationships()
+            .map_err(|e| e.to_string())?;
 
         let callers: Vec<_> = all_rels
             .iter()
             .filter(|r| {
-                r.rel_type == "navigates_to" && (
-                    r.target_qualified.contains(destination) ||
-                    r.target_qualified.contains(&format!("class:{}", destination))
-                )
+                r.rel_type == "navigates_to"
+                    && (r.target_qualified.contains(destination)
+                        || r.target_qualified
+                            .contains(&format!("class:{}", destination)))
             })
             .map(|r| r.source_qualified.clone())
             .collect();

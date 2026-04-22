@@ -391,7 +391,13 @@ mod tests {
         assert_eq!(RelationshipType::RequiresArg.as_str(), "requires_arg");
         assert_eq!(RelationshipType::DeepLink.as_str(), "deep_link");
         assert_eq!(RelationshipType::Presents.as_str(), "presents");
-        assert_eq!(RelationshipType::from_str("navigates_to"), Some(RelationshipType::NavigatesTo));
-        assert_eq!(RelationshipType::from_str("presents"), Some(RelationshipType::Presents));
+        assert_eq!(
+            RelationshipType::from_str("navigates_to"),
+            Some(RelationshipType::NavigatesTo)
+        );
+        assert_eq!(
+            RelationshipType::from_str("presents"),
+            Some(RelationshipType::Presents)
+        );
     }
 }
