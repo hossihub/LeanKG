@@ -26,7 +26,7 @@ impl ToolRegistry {
                     "properties": {
                         "path": {"type": "string", "description": "Path to index (default: current directory)"},
                         "incremental": {"type": "boolean", "description": "Only index changed files (git-based)"},
-                        "lang": {"type": "string", "description": "Filter by language (e.g., go,ts,py,rs)"},
+                        "lang": {"type": "string", "description": "Filter by language (e.g., go,ts,py,rs,kt)"},
                         "exclude": {"type": "string", "description": "Exclude patterns (comma-separated)"}
                     },
                     "required": []

@@ -647,7 +647,66 @@ pub fn index_file_sync(
     let tree = parser.parse(source, None).ok_or("Failed to parse")?;
 
     let extractor = EntityExtractor::new(source, file_path, language);
-    let (elements, relationships) = extractor.extract(&tree);
+    let (mut elements, mut relationships) = extractor.extract(&tree);
+
+    // Extract calls with resolution using CallGraphBuilder
+    let call_rels = crate::indexer::call_graph::extract_calls_with_resolution(
+        &tree, source, file_path, language,
+    );
+    relationships.extend(call_rels);
+
+    // Android-specific extractors for Kotlin files
+    if language == "kotlin" {
+        let room_extractor = crate::indexer::AndroidRoomExtractor::new(source, file_path);
+        let (room_elements, room_relationships) = room_extractor.extract();
+        elements.extend(room_elements);
+        relationships.extend(room_relationships);
+
+        let hilt_extractor = crate::indexer::AndroidHiltExtractor::new(source, file_path);
+        let (hilt_elements, hilt_relationships) = hilt_extractor.extract();
+        elements.extend(hilt_elements);
+        relationships.extend(hilt_relationships);
+
+        let res_ref_extractor = crate::indexer::AndroidResourceRefExtractor::new(source, file_path);
+        let (_, res_ref_relationships) = res_ref_extractor.extract();
+        relationships.extend(res_ref_relationships);
+
+        // Extract Kotlin annotations
+        let annotation_extractor =
+            crate::indexer::KotlinAnnotationExtractor::new(source, file_path);
+        let (annotation_elements, annotation_relationships) = annotation_extractor.extract(&tree);
+        elements.extend(annotation_elements);
+        relationships.extend(annotation_relationships);
+
+        // Extract enhanced resource linking
+        let resource_linker = crate::indexer::AndroidResourceLinker::new(source, file_path);
+        let (_, resource_link_rels) = resource_linker.extract();
+        relationships.extend(resource_link_rels);
+
+        // Extract navigation patterns
+        let frag_nav_extractor = crate::indexer::FragmentNavExtractor::new(source, file_path);
+        let (_, frag_nav_relationships) = frag_nav_extractor.extract();
+        relationships.extend(frag_nav_relationships);
+
+        let leanback_extractor = crate::indexer::LeanbackNavExtractor::new(source, file_path);
+        let (leanback_elements, leanback_relationships) = leanback_extractor.extract();
+        elements.extend(leanback_elements);
+        relationships.extend(leanback_relationships);
+
+        // JetpackNavExtractor Kotlin DSL
+        if content
+            .windows(b"NavGraphBuilder".len())
+            .any(|w| w == b"NavGraphBuilder")
+            || content
+                .windows(b"composable(".len())
+                .any(|w| w == b"composable(")
+        {
+            let nav_dsl_extractor = crate::indexer::JetpackNavExtractor::new(source, file_path);
+            let (nav_elements, nav_relationships) = nav_dsl_extractor.extract_kotlin_dsl();
+            elements.extend(nav_elements);
+            relationships.extend(nav_relationships);
+        }
+    }
 
     if elements.is_empty() && relationships.is_empty() {
         return Ok(0);

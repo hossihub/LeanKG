@@ -1,4 +1,5 @@
 use crate::db::models::{CodeElement, Relationship};
+use regex;
 
 pub struct JetpackNavExtractor<'a> {
     source: &'a [u8],
@@ -211,9 +212,180 @@ impl<'a> JetpackNavExtractor<'a> {
         (elements, relationships)
     }
 
-    /// Stub for Kotlin DSL navigation parsing (Task 4).
+    /// Parse Compose Navigation DSL in Kotlin source files.
     pub fn extract_kotlin_dsl(&self) -> (Vec<CodeElement>, Vec<Relationship>) {
-        (Vec::new(), Vec::new())
+        let content = match std::str::from_utf8(self.source) {
+            Ok(s) => s,
+            Err(_) => return (Vec::new(), Vec::new()),
+        };
+
+        let mut elements: Vec<CodeElement> = Vec::new();
+        let mut relationships: Vec<Relationship> = Vec::new();
+
+        let graph_id = "compose_nav".to_string();
+        let graph_qn = format!("{}::nav_graph::{}", self.file_path, graph_id);
+
+        // Create a root nav_graph element for the compose DSL
+        elements.push(CodeElement {
+            qualified_name: graph_qn.clone(),
+            element_type: "nav_graph".to_string(),
+            name: graph_id.clone(),
+            file_path: self.file_path.to_string(),
+            line_start: 0,
+            line_end: 0,
+            language: "kotlin".to_string(),
+            metadata: serde_json::json!({
+                "graph_id": graph_id,
+                "dsl_type": "compose",
+            }),
+            ..Default::default()
+        });
+
+        // Extract composable() route definitions: composable(route = "...")
+        // Regex: composable\s*\(\s*route\s*=\s*"([^"]+)"
+        let composable_re = regex::Regex::new(r#"composable\s*\(\s*route\s*=\s*"([^"]+)"#)
+            .unwrap_or_else(|_| regex::Regex::new(r"^\x00$").unwrap());
+
+        for cap in composable_re.captures_iter(content) {
+            if let Some(route_match) = cap.get(1) {
+                let route = route_match.as_str();
+                let dest_id = route.to_string();
+                let dest_qn = format!("{}::{}", graph_qn, dest_id);
+
+                elements.push(CodeElement {
+                    qualified_name: dest_qn.clone(),
+                    element_type: "nav_destination".to_string(),
+                    name: dest_id.clone(),
+                    file_path: self.file_path.to_string(),
+                    line_start: 0,
+                    line_end: 0,
+                    language: "kotlin".to_string(),
+                    parent_qualified: Some(graph_qn.clone()),
+                    metadata: serde_json::json!({
+                        "destination_id": dest_id,
+                        "dest_type": "composable",
+                        "route": route,
+                    }),
+                    ..Default::default()
+                });
+            }
+        }
+
+        // Extract navigation() blocks: navigation(route = "...", startDestination = "...")
+        let nav_re = regex::Regex::new(
+            r#"navigation\s*\(\s*route\s*=\s*"([^"]+)"\s*,\s*startDestination\s*=\s*"([^"]+)""#,
+        )
+        .unwrap_or_else(|_| regex::Regex::new(r"^\x00$").unwrap());
+
+        for cap in nav_re.captures_iter(content) {
+            if let (Some(route_match), Some(start_match)) = (cap.get(1), cap.get(2)) {
+                let route = route_match.as_str();
+                let start_dest = start_match.as_str();
+                let dest_id = route.to_string();
+                let dest_qn = format!("{}::{}", graph_qn, dest_id);
+
+                elements.push(CodeElement {
+                    qualified_name: dest_qn.clone(),
+                    element_type: "nav_destination".to_string(),
+                    name: dest_id.clone(),
+                    file_path: self.file_path.to_string(),
+                    line_start: 0,
+                    line_end: 0,
+                    language: "kotlin".to_string(),
+                    parent_qualified: Some(graph_qn.clone()),
+                    metadata: serde_json::json!({
+                        "destination_id": dest_id,
+                        "dest_type": "navigation",
+                        "route": route,
+                        "start_destination": start_dest,
+                    }),
+                    ..Default::default()
+                });
+            }
+        }
+
+        // Extract argument definitions: argument(name = "...")
+        // Regex: argument\s*\(\s*name\s*=\s*"([^"]+)"
+        let arg_re = regex::Regex::new(r#"argument\s*\(\s*name\s*=\s*"([^"]+)"#)
+            .unwrap_or_else(|_| regex::Regex::new(r"^\x00$").unwrap());
+
+        for cap in arg_re.captures_iter(content) {
+            if let Some(arg_match) = cap.get(1) {
+                let arg_name = arg_match.as_str();
+                // For simplicity, assume argument belongs to the first composable found
+                if let Some(first_dest_qn) = elements
+                    .iter()
+                    .find(|e| e.element_type == "nav_destination")
+                    .map(|e| e.qualified_name.clone())
+                {
+                    let arg_qn = format!("{}::arg::{}", first_dest_qn, arg_name);
+                    let arg_type = "string".to_string();
+                    let nullable = false;
+
+                    elements.push(CodeElement {
+                        qualified_name: arg_qn.clone(),
+                        element_type: "nav_argument".to_string(),
+                        name: arg_name.to_string(),
+                        file_path: self.file_path.to_string(),
+                        line_start: 0,
+                        line_end: 0,
+                        language: "kotlin".to_string(),
+                        parent_qualified: Some(first_dest_qn.clone()),
+                        metadata: serde_json::json!({
+                            "arg_type": arg_type,
+                            "nullable": nullable,
+                        }),
+                        ..Default::default()
+                    });
+
+                    relationships.push(Relationship {
+                        id: None,
+                        source_qualified: first_dest_qn.clone(),
+                        target_qualified: arg_qn,
+                        rel_type: "requires_arg".to_string(),
+                        confidence: 0.85,
+                        metadata: serde_json::json!({
+                            "arg_name": arg_name,
+                        }),
+                    });
+                }
+            }
+        }
+
+        // Extract navigate() calls to infer navigation actions
+        // Regex: navigate\s*\(\s*"([^"]+)"
+        let navigate_re = regex::Regex::new(r#"navigate\s*\(\s*"([^"]+)""#)
+            .unwrap_or_else(|_| regex::Regex::new(r"^\x00$").unwrap());
+
+        let mut seen_nav = std::collections::HashSet::new();
+        for cap in navigate_re.captures_iter(content) {
+            if let Some(dest_match) = cap.get(1) {
+                let target_route = dest_match.as_str();
+                let key = target_route.to_string();
+                if !seen_nav.contains(&key) && !elements.is_empty() {
+                    seen_nav.insert(key);
+                    // Create implicit action from first destination to the target
+                    if let Some(source_dest) = elements
+                        .iter()
+                        .find(|e| e.element_type == "nav_destination")
+                    {
+                        let target_qn = format!("{}::{}", graph_qn, target_route);
+                        relationships.push(Relationship {
+                            id: None,
+                            source_qualified: source_dest.qualified_name.clone(),
+                            target_qualified: target_qn,
+                            rel_type: "nav_action".to_string(),
+                            confidence: 0.75,
+                            metadata: serde_json::json!({
+                                "action_id": None::<String>,
+                            }),
+                        });
+                    }
+                }
+            }
+        }
+
+        (elements, relationships)
     }
 }
 
