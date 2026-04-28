@@ -1,4 +1,4 @@
-use crate::db::schema::init_db_lightweight;
+use crate::db::schema::init_db;
 use crate::graph::GraphEngine;
 use crate::indexer::{reindex_file_sync, ParserManager};
 use crate::watcher::FileChange;
@@ -75,7 +75,7 @@ pub async fn start_watcher(db_path: PathBuf, watch_path: PathBuf, _rx: mpsc::Rec
     let async_watcher = watcher.into_async(tx);
     tokio::spawn(async_watcher.run());
 
-    let db = match init_db_lightweight(&db_path) {
+    let db = match init_db(&db_path) {
         Ok(db) => db,
         Err(e) => {
             tracing::error!("Failed to init db for watcher: {}", e);

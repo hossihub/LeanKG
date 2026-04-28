@@ -315,7 +315,7 @@ impl MCPServer {
         futures_util::future::pending().await
     }
 
-/// Check if the API server is running on the given port by connecting to it
+    /// Check if the API server is running on the given port by connecting to it
     async fn is_api_server_running(port: u16) -> bool {
         let addr = SocketAddr::from(([127, 0, 0, 1], port));
         tokio::net::TcpStream::connect(addr).await.is_ok()
@@ -449,7 +449,6 @@ impl MCPServer {
         axum::serve(listener, app).await?;
 
         Ok(())
->>>>>>> d32609d (feat: add MCP HTTP transport for remote MCP server)
     }
 
     async fn auto_init_if_needed(&self) -> Result<(), String> {
